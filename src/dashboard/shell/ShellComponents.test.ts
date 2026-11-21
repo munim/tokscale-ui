@@ -147,6 +147,6 @@ describe('AppBar, KpiStrip, StatusBar, and DashboardApp', () => {
     expect(screen.getByText('Near limit')).toBeInTheDocument();
 
     await fireEvent.click(screen.getByRole('tab', { name: 'Models' }));
-    expect(screen.getByText('TODO: Models')).toBeInTheDocument();
+    expect(document.querySelector('[data-view="models"]')).not.toBeNull();
   });
 });
