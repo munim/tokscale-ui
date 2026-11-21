@@ -1,0 +1,56 @@
+:root {
+  --ui-row-height: 32px;
+  --ui-focus-ring: 2px solid var(--accent);
+  --ui-scrim: color-mix(in oklch, var(--shadow-ink) 35%, transparent);
+  --ui-shadow-sm: 0 1px 2px color-mix(in oklch, var(--shadow-ink) 8%, transparent);
+  --ui-shadow-md: 0 6px 20px color-mix(in oklch, var(--shadow-ink) 14%, transparent);
+}
+
+.ui-root {
+  font-family: var(--font-body);
+  font-size: 13px;
+  line-height: 1.4;
+  color: var(--fg);
+}
+
+[hidden] {
+  display: none !important;
+}
+
+.ui-focusable:focus-visible,
+.ui-seg button:focus-visible,
+.ui-table-sort:focus-visible,
+.ui-table-row-btn:focus-visible,
+.ui-empty-btn:focus-visible,
+.ui-chart-bar:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.ui-mono {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.ui-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ui-seg button,
+  .ui-chart-bar,
+  .ui-quota-fill,
+  .ui-table-row,
+  .ui-empty-btn {
+    transition: none !important;
+    animation: none !important;
+  }
+}
