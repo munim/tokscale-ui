@@ -1,0 +1,112 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Build & Publish (${{ matrix.label }})
+    runs-on: ${{ matrix.platform }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: macOS arm64
+            platform: macos-latest
+            rust_target: aarch64-apple-darwin
+            args: --target aarch64-apple-darwin
+          - label: macOS x64
+            platform: macos-latest
+            rust_target: x86_64-apple-darwin
+            args: --target x86_64-apple-darwin
+          - label: Windows x64
+            platform: windows-latest
+            rust_target: ""
+            args: ""
+          - label: Linux x64
+            platform: ubuntu-22.04
+            rust_target: ""
+            args: ""
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Linux dependencies
+        if: matrix.platform == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev patchelf xdg-utils
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.4.1"
+
+      - name: Setup Rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.rust_target }}
+
+      - name: Rust cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Install frontend dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Build and publish release
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          tagName: v__VERSION__
+          releaseName: Tokscale UI v__VERSION__
+          releaseBody: See the assets to download and install this version.
+          releaseDraft: false
+          prerelease: false
+          includeUpdaterJson: true
+          retryAttempts: 3
+          args: ${{ matrix.args }}
+
+  verify-release:
+    name: Verify Updater Manifest (latest.json)
+    needs: release
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download and validate latest.json
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          TAG="v$(jq -r '.version' src-tauri/tauri.conf.json)"
+          gh release download "$TAG" --repo "${GITHUB_REPOSITORY}" --pattern "latest.json" --clobber
+
+          jq -e '
+            (.version | type == "string" and length > 0) and
+            (.notes | type == "string") and
+            (.pub_date | type == "string" and length > 0) and
+            (.platforms | type == "object")
+          ' latest.json >/dev/null
+
+          for platform in darwin-aarch64 darwin-x86_64 windows-x86_64 linux-x86_64; do
+            jq -e --arg p "$platform" '
+              .platforms[$p] != null and
+              (.platforms[$p].signature | type == "string" and length > 0) and
+              (.platforms[$p].url | type == "string" and length > 0)
+            ' latest.json >/dev/null || {
+              echo "ERROR: Missing or incomplete platform entry in latest.json: $platform"
+              cat latest.json
+              exit 1
+            }
+          done
+
+          echo "Verified latest.json contains all 4 required platform entries."
