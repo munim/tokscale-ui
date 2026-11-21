@@ -119,6 +119,26 @@ pub fn monthly_offline(
     argv
 }
 
+/// Daily contribution graph (all days + per-client/model breakdown): `graph --no-spinner --offline`.
+pub fn graph_offline() -> Vec<String> {
+    vec![
+        "graph".to_string(),
+        "--no-spinner".to_string(),
+        "--offline".to_string(),
+    ]
+}
+
+/// Hourly usage breakdown for the last 7 days: `hourly --json --no-spinner --offline --week`.
+pub fn hourly_week_offline() -> Vec<String> {
+    vec![
+        "hourly".to_string(),
+        "--json".to_string(),
+        "--no-spinner".to_string(),
+        "--offline".to_string(),
+        "--week".to_string(),
+    ]
+}
+
 /// Clients list: `clients --json`.
 pub fn clients() -> Vec<String> {
     vec!["clients".to_string(), "--json".to_string()]
@@ -230,6 +250,14 @@ mod tests {
         );
         assert_eq!(clients(), vec!["clients", "--json"]);
         assert_eq!(usage(), vec!["usage", "--json"]);
+        assert_eq!(
+            graph_offline(),
+            vec!["graph", "--no-spinner", "--offline"]
+        );
+        assert_eq!(
+            hourly_week_offline(),
+            vec!["hourly", "--json", "--no-spinner", "--offline", "--week"]
+        );
         assert_eq!(provider_sync("cursor"), vec!["cursor", "sync"]);
         assert_eq!(version(), vec!["--version"]);
     }

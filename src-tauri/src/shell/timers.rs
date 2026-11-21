@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, RwLock};
 use std::time::{Duration, Instant};
 
@@ -9,20 +9,29 @@ use crate::contracts::SyncMode;
 use crate::shell::ShellHooks;
 
 pub const WATCHER_DEBOUNCE: Duration = Duration::from_secs(5);
+pub const WATCHER_COOLDOWN: Duration = Duration::from_secs(30);
 pub const OFFLINE_REFRESH_INTERVAL: Duration = Duration::from_secs(5 * 60);
 pub const QUOTA_REFRESH_INTERVAL: Duration = Duration::from_secs(30 * 60);
 
 #[derive(Debug, Clone)]
 pub struct DebounceGate {
     debounce: Duration,
+    cooldown: Duration,
     last_event: Option<Instant>,
+    last_fired: Option<Instant>,
 }
 
 impl DebounceGate {
     pub fn new(debounce: Duration) -> Self {
+        Self::with_cooldown(debounce, Duration::ZERO)
+    }
+
+    pub fn with_cooldown(debounce: Duration, cooldown: Duration) -> Self {
         Self {
             debounce,
+            cooldown,
             last_event: None,
+            last_fired: None,
         }
     }
 
@@ -31,15 +40,22 @@ impl DebounceGate {
     }
 
     pub fn next_deadline(&self) -> Option<Instant> {
-        self.last_event.map(|ts| ts + self.debounce)
+        self.last_event.map(|ts| {
+            let debounced = ts + self.debounce;
+            match self.last_fired {
+                Some(fired) => debounced.max(fired + self.cooldown),
+                None => debounced,
+            }
+        })
     }
 
     pub fn poll_fire(&mut self, now: Instant) -> bool {
-        let Some(last) = self.last_event else {
+        let Some(deadline) = self.next_deadline() else {
             return false;
         };
-        if now.saturating_duration_since(last) >= self.debounce {
+        if now >= deadline {
             self.last_event = None;
+            self.last_fired = Some(now);
             true
         } else {
             false
@@ -49,6 +65,28 @@ impl DebounceGate {
 
 pub fn should_trigger_watcher(kind: &EventKind) -> bool {
     !matches!(kind, EventKind::Access(_))
+}
+
+pub fn is_noisy_watch_path(path: &Path) -> bool {
+    let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+        return false;
+    };
+    name == ".DS_Store"
+        || name.ends_with("-wal")
+        || name.ends_with("-shm")
+        || name.ends_with("-journal")
+        || name.ends_with(".lock")
+        || name.ends_with(".tmp")
+}
+
+pub fn should_trigger_watcher_event(event: &Event) -> bool {
+    if !should_trigger_watcher(&event.kind) {
+        return false;
+    }
+    if !event.paths.is_empty() && event.paths.iter().all(|p| is_noisy_watch_path(p)) {
+        return false;
+    }
+    true
 }
 
 pub fn filter_existing_watch_dirs(paths: Vec<PathBuf>) -> Vec<PathBuf> {
@@ -153,7 +191,7 @@ impl Drop for ShellTimers {
 fn build_watcher(event_tx: mpsc::UnboundedSender<()>) -> Option<RecommendedWatcher> {
     notify::recommended_watcher(move |res: notify::Result<Event>| {
         if let Ok(event) = res {
-            if should_trigger_watcher(&event.kind) {
+            if should_trigger_watcher_event(&event) {
                 let _ = event_tx.send(());
             }
         }
@@ -167,6 +205,8 @@ fn spawn_watcher_debounce_task(
     hooks: Arc<RwLock<ShellHooks>>,
 ) {
     tauri::async_runtime::spawn(async move {
+        let mut last_fired: Option<tokio::time::Instant> = None;
+
         loop {
             tokio::select! {
                 changed = shutdown_rx.changed() => {
@@ -181,7 +221,15 @@ fn spawn_watcher_debounce_task(
                 }
             }
 
-            let mut deadline = tokio::time::Instant::now() + WATCHER_DEBOUNCE;
+            let compute_deadline = |now: tokio::time::Instant, last_fired: Option<tokio::time::Instant>| {
+                let debounced = now + WATCHER_DEBOUNCE;
+                match last_fired {
+                    Some(fired) => debounced.max(fired + WATCHER_COOLDOWN),
+                    None => debounced,
+                }
+            };
+
+            let mut deadline = compute_deadline(tokio::time::Instant::now(), last_fired);
             loop {
                 tokio::select! {
                     changed = shutdown_rx.changed() => {
@@ -192,12 +240,13 @@ fn spawn_watcher_debounce_task(
                     ev = event_rx.recv() => {
                         match ev {
                             Some(()) => {
-                                deadline = tokio::time::Instant::now() + WATCHER_DEBOUNCE;
+                                deadline = compute_deadline(tokio::time::Instant::now(), last_fired);
                             }
                             None => return,
                         }
                     }
                     _ = tokio::time::sleep_until(deadline) => {
+                        last_fired = Some(tokio::time::Instant::now());
                         let cb = hooks
                             .read()
                             .unwrap_or_else(|e| e.into_inner())
@@ -274,6 +323,58 @@ mod tests {
         let missing = tmp.path().join("does-not-exist");
         let filtered = filter_existing_watch_dirs(vec![existing.clone(), missing, existing.clone()]);
         assert_eq!(filtered, vec![existing]);
+    }
+
+    #[test]
+    fn watcher_ignores_wal_shm_journal_lock_tmp_and_ds_store_paths() {
+        let noisy_kind = EventKind::Modify(notify::event::ModifyKind::Data(
+            notify::event::DataChange::Content,
+        ));
+        for noisy in [
+            "/tmp/opencode.db-wal",
+            "/tmp/opencode.db-shm",
+            "/tmp/opencode.db-journal",
+            "/tmp/session.lock",
+            "/tmp/cache.tmp",
+            "/tmp/.DS_Store",
+        ] {
+            let ev = Event {
+                kind: noisy_kind,
+                paths: vec![PathBuf::from(noisy)],
+                attrs: Default::default(),
+            };
+            assert!(
+                !should_trigger_watcher_event(&ev),
+                "expected {noisy} to be ignored"
+            );
+        }
+
+        // Mixed event with at least one real file triggers watcher.
+        let mixed = Event {
+            kind: noisy_kind,
+            paths: vec![
+                PathBuf::from("/tmp/opencode.db-wal"),
+                PathBuf::from("/tmp/opencode.db"),
+            ],
+            attrs: Default::default(),
+        };
+        assert!(should_trigger_watcher_event(&mixed));
+    }
+
+    #[test]
+    fn debounce_gate_enforces_cooldown_between_fires() {
+        let mut gate = DebounceGate::with_cooldown(WATCHER_DEBOUNCE, WATCHER_COOLDOWN);
+        let t0 = Instant::now();
+
+        gate.record_event(t0);
+        assert!(gate.poll_fire(t0 + Duration::from_secs(5)));
+
+        // Event 1s after firing (at t0+6s) would debounce at t0+11s,
+        // but must wait until t0+5s + 30s = t0+35s.
+        gate.record_event(t0 + Duration::from_secs(6));
+        assert_eq!(gate.next_deadline(), Some(t0 + Duration::from_secs(35)));
+        assert!(!gate.poll_fire(t0 + Duration::from_secs(20)));
+        assert!(gate.poll_fire(t0 + Duration::from_secs(35)));
     }
 
     #[tokio::test]

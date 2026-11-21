@@ -23,6 +23,13 @@ use crate::data::slice::{
 };
 use crate::data::source::DataOrigin;
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LoadedSessionsScope {
+    pub range: RangePreset,
+    pub custom_since: Option<String>,
+    pub custom_until: Option<String>,
+}
+
 #[derive(Debug, Clone, Default)]
 pub struct DataStore {
     pub cache: TuiCache,
@@ -38,6 +45,8 @@ pub struct DataStore {
     pub fallback_required: bool,
     pub syncing: bool,
     pub last_synced_at: Option<u64>,
+    pub cli_synced_at: Option<u64>,
+    pub loaded_sessions_scope: Option<LoadedSessionsScope>,
     pub warnings: Vec<SourceWarning>,
     pub pending_handoff: Option<DashboardNavigateEvent>,
 }
@@ -276,7 +285,9 @@ pub fn build_dashboard(
     };
 
     let graph = build_graph_data(&store.cache.data.daily, &daily_views, &store.cache, bounds);
-    let stats = build_stats_summary(&daily_views, &store.cache, query.range == RangePreset::All && !has_filters, today);
+    let use_cached_streaks =
+        query.range == RangePreset::All && !has_filters && store.origin == DataOrigin::Cache;
+    let stats = build_stats_summary(&daily_views, &store.cache, use_cached_streaks, today);
     let usage = build_usage_views(&store.usage);
     let agents = build_agent_rows(&store.cache, query);
     let sources = build_dashboard_sources(store);

@@ -72,7 +72,14 @@ case "$1" in
     echo '[{"model":"claude-sonnet-4-5","provider":"anthropic","client":"claude","tokens":{"input":200,"output":40,"cacheRead":600,"cacheWrite":0,"reasoning":0},"cost":2.5,"sessionCount":3}]'
     ;;
   daily)
-    echo '[{"date":"2026-11-21","tokens":{"input":200,"output":40,"cacheRead":600,"cacheWrite":0,"reasoning":0},"cost":2.5,"messageCount":8}]'
+    echo "error: unrecognized subcommand 'daily'" >&2
+    exit 2
+    ;;
+  graph)
+    echo '{"meta":{"version":"4.24.0"},"summary":{"totalCost":2.5,"totalTokens":840},"years":[2026],"contributions":[{"date":"2026-11-21","totals":{"tokens":840,"cost":2.5,"messages":8},"intensity":4,"tokenBreakdown":{"input":200,"output":40,"cacheRead":600,"cacheWrite":0,"reasoning":0},"clients":[{"client":"claude","modelId":"claude-sonnet-4-5","providerId":"anthropic","tokens":{"input":200,"output":40,"cacheRead":600,"cacheWrite":0,"reasoning":0},"cost":2.5,"messages":8}]}]}'
+    ;;
+  hourly)
+    echo '{"entries":[{"hour":"2026-11-21 10:00","clients":["claude"],"models":["claude-sonnet-4-5"],"input":200,"output":40,"cacheRead":600,"cacheWrite":0,"messageCount":8,"turnCount":4,"cost":2.5}],"totalCost":2.5,"processingTimeMs":15}'
     ;;
   monthly)
     echo '[{"month":"2026-11","models":["claude-sonnet-4-5"],"tokens":{"input":200,"output":40,"cacheRead":600,"cacheWrite":0,"reasoning":0},"messageCount":8,"sessionCount":3,"activeDays":1,"cost":2.5}]'

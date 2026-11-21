@@ -6,12 +6,13 @@ pub mod slice;
 pub mod snapshot;
 pub mod source;
 
+use std::collections::{BTreeMap, HashMap};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, RwLock};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use chrono::NaiveDate;
+use chrono::{Datelike, NaiveDate};
 use serde::Deserialize;
 
 use crate::contracts::{
@@ -20,18 +21,22 @@ use crate::contracts::{
 };
 use crate::data::cache::{CacheOutcome, UsageCacheOutcome};
 use crate::data::schema::{
-    ClientHealthCliRow, ClientsCliPayload, DailyRow, ModelRow, MonthlyCliRow,
+    ClientHealthCliRow, ClientsCliPayload, DailyRow, Graph, GraphCell, HourlyModel, HourlyRow,
+    ModelRow, MonthlyCliRow, ProviderUsage, SourceBreakdown, SourceBreakdownModel, TokenCounts,
+    UsageCache,
 };
 use crate::data::sessions::{
     build_projects, filter_sessions, join_sessions_and_models, merge_enriched_titles,
     parse_grouped_models, parse_report_sessions, session_join_key, GroupedModelCliRow,
     ReportSession,
 };
-use crate::data::slice::local_today;
-use crate::data::snapshot::{build_dashboard, build_tray, CliResolutionInfoDefault, DataStore};
+use crate::data::slice::{local_today, parse_date_prefix};
+use crate::data::snapshot::{
+    build_dashboard, build_tray, CliResolutionInfoDefault, DataStore, LoadedSessionsScope,
+};
 use crate::data::source::{
-    clients_cli_args, models_cli_args, monthly_cli_args, range_cli_args, report_cli_args,
-    CliRunner, DataOrigin, NoopCliRunner,
+    clients_cli_args, graph_cli_args, hourly_cli_args, models_cli_args, monthly_cli_args,
+    range_cli_args, report_cli_args, CliRunner, DataOrigin, NoopCliRunner,
 };
 
 #[derive(Debug, Clone)]
@@ -88,6 +93,50 @@ impl DataService {
         self.store.read().expect("DataStore lock poisoned").origin
     }
 
+    pub fn has_today_data(&self) -> bool {
+        self.has_date_data(local_today())
+    }
+
+    pub fn has_date_data(&self, date: NaiveDate) -> bool {
+        let date_str = date.format("%Y-%m-%d").to_string();
+        let guard = self.store.read().expect("DataStore lock poisoned");
+        guard.cache.data.daily.iter().any(|d| d.date == date_str)
+            || guard
+                .cache
+                .data
+                .hourly
+                .iter()
+                .any(|h| h.datetime.starts_with(&date_str))
+    }
+
+    pub fn sessions_scope_covers(&self, query: &DashboardQuery) -> bool {
+        let guard = self.store.read().expect("DataStore lock poisoned");
+        let Some(ref loaded) = guard.loaded_sessions_scope else {
+            return false;
+        };
+        match (loaded.range, query.range) {
+            (RangePreset::All, _) => true,
+            (
+                RangePreset::ThirtyDays,
+                RangePreset::ThirtyDays | RangePreset::SevenDays | RangePreset::Today,
+            ) => true,
+            (RangePreset::SevenDays, RangePreset::SevenDays | RangePreset::Today) => true,
+            (RangePreset::Today, RangePreset::Today) => true,
+            (RangePreset::Custom, RangePreset::Custom) => {
+                loaded.custom_since == query.custom_since
+                    && loaded.custom_until == query.custom_until
+            }
+            _ => false,
+        }
+    }
+
+    pub fn update_usage_json(&self, raw: &serde_json::Value) -> Result<(), String> {
+        let usage = parse_usage_cli_payload(raw)?;
+        let mut guard = self.store.write().expect("DataStore lock poisoned");
+        guard.usage = usage;
+        Ok(())
+    }
+
     pub fn hydrate_from_disk(&self) -> HydrateReport {
         self.disk_reads.fetch_add(1, Ordering::Relaxed);
 
@@ -106,27 +155,63 @@ impl DataService {
 
         {
             let mut guard = self.store.write().expect("DataStore lock poisoned");
+            let cli_is_newer = match (&cache_outcome, guard.cli_synced_at) {
+                (CacheOutcome::Fresh(tui_cache), Some(cli_ts)) => tui_cache.timestamp <= cli_ts,
+                (_, Some(_)) => true,
+                _ => false,
+            };
+
             match &cache_outcome {
                 CacheOutcome::Fresh(tui_cache) => {
-                    guard.cache = tui_cache.clone();
-                    guard.origin = DataOrigin::Cache;
-                    guard.fallback_required = false;
-                    if tui_cache.timestamp > 0 {
-                        guard.last_synced_at = Some(tui_cache.timestamp);
+                    if cli_is_newer {
+                        if guard.cache.data.agents.is_empty() && !tui_cache.data.agents.is_empty() {
+                            guard.cache.data.agents = tui_cache.data.agents.clone();
+                        }
+                        if guard.cache.enabled_clients.is_empty()
+                            && !tui_cache.enabled_clients.is_empty()
+                        {
+                            guard.cache.enabled_clients = tui_cache.enabled_clients.clone();
+                        }
+                        guard.fallback_required = false;
+                    } else {
+                        guard.cache = tui_cache.clone();
+                        guard.origin = DataOrigin::Cache;
+                        guard.fallback_required = false;
+                        if tui_cache.timestamp > 0 {
+                            guard.last_synced_at = Some(tui_cache.timestamp);
+                        }
                     }
                 }
                 CacheOutcome::Missing
                 | CacheOutcome::Drift { .. }
                 | CacheOutcome::Corrupt(_) => {
-                    guard.fallback_required = true;
+                    if !cli_is_newer {
+                        guard.fallback_required = true;
+                    }
                 }
             }
 
             if let UsageCacheOutcome::Fresh(ref usage) = usage_outcome {
-                guard.usage = usage.clone();
+                if guard.usage.data.is_empty() || usage.timestamp > guard.usage.timestamp {
+                    guard.usage = usage.clone();
+                }
             }
 
-            guard.warnings = warnings.clone();
+            if cli_is_newer {
+                let mut filtered_warnings: Vec<SourceWarning> = warnings
+                    .iter()
+                    .filter(|w| w.source != "cache")
+                    .cloned()
+                    .collect();
+                for existing in &guard.warnings {
+                    if existing.source != "cache" && !filtered_warnings.contains(existing) {
+                        filtered_warnings.push(existing.clone());
+                    }
+                }
+                guard.warnings = filtered_warnings;
+            } else {
+                guard.warnings = warnings.clone();
+            }
         }
 
         HydrateReport {
@@ -239,14 +324,15 @@ impl DataService {
         let models_val = self.cli.run_json(&models_cli_args(None, &[])).await?;
         let models = parse_models_cli_rows(&models_val)?;
 
-        let daily_val = self
-            .cli
-            .run_json(&["daily".to_string(), "--json".to_string()])
-            .await
-            .ok();
-        let daily = daily_val
+        let graph_val = self.cli.run_json(&graph_cli_args()).await.ok();
+        let parsed_graph = graph_val
             .as_ref()
-            .and_then(|v| parse_daily_cli_rows(v).ok())
+            .and_then(|v| parse_graph_cli_payload(v).ok());
+
+        let hourly_val = self.cli.run_json(&hourly_cli_args()).await.ok();
+        let parsed_hourly = hourly_val
+            .as_ref()
+            .and_then(|v| parse_hourly_cli_rows(v).ok())
             .unwrap_or_default();
 
         let monthly_val = self.cli.run_json(&monthly_cli_args(&[])).await.ok();
@@ -262,21 +348,84 @@ impl DataService {
         let now_secs = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .map(|d| d.as_secs())
-            .unwrap_or(0);
+            .unwrap_or(1)
+            .max(1);
 
         let mut guard = self.store.write().expect("DataStore lock poisoned");
         guard.cache.data.models = models;
-        if !daily.is_empty() {
-            guard.cache.data.daily = daily;
+
+        let mut intensity_by_date: HashMap<String, f64> = HashMap::new();
+        for week in &guard.cache.data.graph.weeks {
+            for cell in week.iter().flatten() {
+                intensity_by_date.insert(cell.date.clone(), cell.intensity);
+            }
         }
-        guard.cache.data.total_cost = guard.cache.data.models.iter().map(|m| m.cost).sum();
-        guard.cache.data.total_tokens = guard
-            .cache
-            .data
-            .models
-            .iter()
-            .map(|m| m.tokens.total())
-            .sum();
+
+        let mut summary_streaks: Option<(u32, u32)> = None;
+        if let Some((new_daily, new_intensities, streaks)) = parsed_graph {
+            let mut daily_map: BTreeMap<String, DailyRow> = guard
+                .cache
+                .data
+                .daily
+                .drain(..)
+                .map(|row| (row.date.clone(), row))
+                .collect();
+            for row in new_daily {
+                daily_map.insert(row.date.clone(), row);
+            }
+            guard.cache.data.daily = daily_map.into_values().collect();
+            for (date, intensity) in new_intensities {
+                intensity_by_date.insert(date, intensity);
+            }
+            summary_streaks = streaks;
+        }
+
+        if !parsed_hourly.is_empty() {
+            let mut hourly_map: BTreeMap<String, HourlyRow> = guard
+                .cache
+                .data
+                .hourly
+                .drain(..)
+                .map(|row| (normalize_hour_key(&row.datetime), row))
+                .collect();
+            for row in parsed_hourly {
+                hourly_map.insert(normalize_hour_key(&row.datetime), row);
+            }
+            guard.cache.data.hourly = hourly_map.into_values().collect();
+        }
+
+        let (rebuilt_graph, computed_cur_streak, computed_longest_streak) =
+            rebuild_graph_and_streaks(&guard.cache.data.daily, &intensity_by_date, local_today());
+        if !rebuilt_graph.weeks.is_empty() {
+            guard.cache.data.graph = rebuilt_graph;
+        }
+        let (cur_streak, longest_streak) = match summary_streaks {
+            Some((cur, longest)) if cur > 0 || longest > 0 => (cur, longest),
+            _ => (computed_cur_streak, computed_longest_streak),
+        };
+        guard.cache.data.current_streak = cur_streak;
+        guard.cache.data.longest_streak = longest_streak;
+
+        if !guard.cache.data.models.is_empty() {
+            guard.cache.data.total_cost = guard.cache.data.models.iter().map(|m| m.cost).sum();
+            guard.cache.data.total_tokens = guard
+                .cache
+                .data
+                .models
+                .iter()
+                .map(|m| m.tokens.total())
+                .sum();
+        } else if !guard.cache.data.daily.is_empty() {
+            guard.cache.data.total_cost = guard.cache.data.daily.iter().map(|d| d.cost).sum();
+            guard.cache.data.total_tokens = guard
+                .cache
+                .data
+                .daily
+                .iter()
+                .map(|d| d.tokens.total())
+                .sum();
+        }
+
         if let Some(m) = monthly {
             guard.monthly_override = Some(m);
         }
@@ -286,9 +435,9 @@ impl DataService {
         guard.origin = DataOrigin::CliFallback;
         guard.fallback_required = false;
         guard.last_synced_at = Some(now_secs);
-        guard
-            .warnings
-            .retain(|w| w.source != "cache");
+        guard.cli_synced_at = Some(now_secs);
+        guard.loaded_sessions_scope = None;
+        guard.warnings.retain(|w| w.source != "cache");
         Ok(())
     }
 
@@ -315,6 +464,14 @@ impl DataService {
         };
 
         self.set_sessions_data(reports, grouped);
+        {
+            let mut guard = self.store.write().expect("DataStore lock poisoned");
+            guard.loaded_sessions_scope = Some(LoadedSessionsScope {
+                range,
+                custom_since: custom_since.map(str::to_string),
+                custom_until: custom_until.map(str::to_string),
+            });
+        }
 
         let query = SessionsQuery {
             query: DashboardQuery {
@@ -406,20 +563,488 @@ fn parse_models_cli_rows(value: &serde_json::Value) -> Result<Vec<ModelRow>, Str
     }
 }
 
-fn parse_daily_cli_rows(value: &serde_json::Value) -> Result<Vec<DailyRow>, String> {
-    if value.is_array() {
+type ParsedGraphResult = (Vec<DailyRow>, HashMap<String, f64>, Option<(u32, u32)>);
+
+fn parse_graph_cli_payload(value: &serde_json::Value) -> Result<ParsedGraphResult, String> {
+    #[derive(Deserialize, Default)]
+    #[serde(default, rename_all = "camelCase")]
+    struct GraphCliPayload {
+        contributions: Vec<GraphContribution>,
+        summary: Option<GraphSummary>,
+    }
+
+    #[derive(Deserialize, Default)]
+    #[serde(default, rename_all = "camelCase")]
+    struct GraphSummary {
+        current_streak: Option<u32>,
+        longest_streak: Option<u32>,
+    }
+
+    #[derive(Deserialize, Default)]
+    #[serde(default, rename_all = "camelCase")]
+    struct GraphContribution {
+        date: String,
+        totals: GraphTotals,
+        intensity: f64,
+        token_breakdown: TokenCounts,
+        clients: Vec<GraphClientEntry>,
+    }
+
+    #[derive(Deserialize, Default)]
+    #[serde(default, rename_all = "camelCase")]
+    struct GraphTotals {
+        tokens: u64,
+        cost: f64,
+        messages: u64,
+    }
+
+    #[derive(Deserialize, Default)]
+    #[serde(default, rename_all = "camelCase")]
+    struct GraphClientEntry {
+        client: String,
+        #[serde(alias = "model")]
+        model_id: String,
+        #[serde(alias = "provider")]
+        provider_id: String,
+        tokens: TokenCounts,
+        cost: f64,
+        #[serde(alias = "messageCount")]
+        messages: u64,
+    }
+
+    let payload: GraphCliPayload = if value.is_array() {
+        GraphCliPayload {
+            contributions: serde_json::from_value(value.clone())
+                .map_err(|e| format!("Failed to parse graph contributions array: {e}"))?,
+            summary: None,
+        }
+    } else if value.is_object() {
         serde_json::from_value(value.clone())
-            .map_err(|e| format!("Failed to parse daily array: {e}"))
+            .map_err(|e| format!("Failed to parse graph payload: {e}"))?
+    } else {
+        return Err("Unexpected graph --no-spinner --offline payload shape".to_string());
+    };
+
+    let mut daily_rows = Vec::with_capacity(payload.contributions.len());
+    let mut intensity_by_date = HashMap::with_capacity(payload.contributions.len());
+
+    for contrib in payload.contributions {
+        let date = contrib.date.trim().to_string();
+        if date.is_empty() {
+            continue;
+        }
+        intensity_by_date.insert(date.clone(), contrib.intensity);
+
+        let mut by_client: BTreeMap<String, SourceBreakdown> = BTreeMap::new();
+        let mut clients_tokens = TokenCounts::default();
+        let mut clients_cost = 0.0_f64;
+        let mut clients_messages = 0_u64;
+
+        for cl in contrib.clients {
+            let client_key = {
+                let trimmed = cl.client.trim().to_ascii_lowercase();
+                if trimmed.is_empty() {
+                    "unknown".to_string()
+                } else {
+                    trimmed
+                }
+            };
+            clients_tokens.add_assign(&cl.tokens);
+            clients_cost += cl.cost;
+            clients_messages = clients_messages.saturating_add(cl.messages);
+
+            let sb = by_client.entry(client_key.clone()).or_default();
+            sb.tokens.add_assign(&cl.tokens);
+            sb.cost += cl.cost;
+
+            let model_key = {
+                let trimmed = cl.model_id.trim();
+                if trimmed.is_empty() {
+                    "unknown".to_string()
+                } else {
+                    trimmed.to_string()
+                }
+            };
+            if let Some((_, existing)) = sb.models.iter_mut().find(|(k, _)| k == &model_key) {
+                existing.tokens.add_assign(&cl.tokens);
+                existing.cost += cl.cost;
+                existing.messages = existing.messages.saturating_add(cl.messages);
+            } else {
+                sb.models.push((
+                    model_key.clone(),
+                    SourceBreakdownModel {
+                        client: client_key,
+                        provider: cl.provider_id,
+                        display_name: model_key.clone(),
+                        color_key: model_key,
+                        tokens: cl.tokens,
+                        cost: cl.cost,
+                        messages: cl.messages,
+                        performance: None,
+                    },
+                ));
+            }
+        }
+
+        let tokens = if contrib.token_breakdown.total() > 0 {
+            contrib.token_breakdown
+        } else if clients_tokens.total() > 0 {
+            clients_tokens
+        } else if contrib.totals.tokens > 0 {
+            TokenCounts {
+                input: contrib.totals.tokens,
+                ..TokenCounts::default()
+            }
+        } else {
+            TokenCounts::default()
+        };
+
+        let cost = if contrib.totals.cost > 0.0 {
+            contrib.totals.cost
+        } else {
+            clients_cost
+        };
+
+        let message_count = if contrib.totals.messages > 0 {
+            contrib.totals.messages
+        } else {
+            clients_messages
+        };
+
+        daily_rows.push(DailyRow {
+            date,
+            tokens,
+            cost,
+            models: serde_json::Value::Array(Vec::new()),
+            source_breakdown: by_client.into_iter().collect(),
+            message_count,
+            turn_count: None,
+        });
+    }
+
+    let streaks = payload
+        .summary
+        .and_then(|s| match (s.current_streak, s.longest_streak) {
+            (Some(c), Some(l)) => Some((c, l)),
+            _ => None,
+        });
+
+    Ok((daily_rows, intensity_by_date, streaks))
+}
+
+fn parse_hourly_cli_rows(value: &serde_json::Value) -> Result<Vec<HourlyRow>, String> {
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum StringOrVec {
+        One(String),
+        Many(Vec<String>),
+    }
+
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum HourlyModelItem {
+        Name(String),
+        Obj {
+            #[serde(default)]
+            model: String,
+            #[serde(default)]
+            provider: String,
+            #[serde(default, alias = "displayName")]
+            display_name: String,
+            #[serde(default)]
+            tokens: TokenCounts,
+            #[serde(default)]
+            cost: f64,
+        },
+    }
+
+    #[derive(Deserialize, Default)]
+    #[serde(default, rename_all = "camelCase")]
+    struct HourlyCliEntry {
+        #[serde(alias = "datetime")]
+        hour: String,
+        clients: Option<StringOrVec>,
+        models: Vec<HourlyModelItem>,
+        input: u64,
+        output: u64,
+        #[serde(alias = "cache_read")]
+        cache_read: u64,
+        #[serde(alias = "cache_write")]
+        cache_write: u64,
+        reasoning: u64,
+        tokens: Option<TokenCounts>,
+        #[serde(alias = "message_count")]
+        message_count: u64,
+        #[serde(alias = "turn_count")]
+        turn_count: Option<u64>,
+        cost: f64,
+    }
+
+    let raw_entries: Vec<HourlyCliEntry> = if value.is_array() {
+        serde_json::from_value(value.clone())
+            .map_err(|e| format!("Failed to parse hourly array: {e}"))?
     } else if let Some(inner) = value
-        .get("daily")
-        .or_else(|| value.get("entries"))
+        .get("entries")
+        .or_else(|| value.get("hourly"))
         .or_else(|| value.get("data"))
     {
         serde_json::from_value(inner.clone())
-            .map_err(|e| format!("Failed to parse daily payload: {e}"))
+            .map_err(|e| format!("Failed to parse hourly payload: {e}"))?
     } else {
-        Err("Unexpected daily --json payload shape".to_string())
+        return Err("Unexpected hourly --json payload shape".to_string());
+    };
+
+    let mut rows = Vec::with_capacity(raw_entries.len());
+    for entry in raw_entries {
+        let datetime = normalize_hour_key(&entry.hour);
+        if datetime.is_empty() {
+            continue;
+        }
+        let tokens = match entry.tokens {
+            Some(t) if t.total() > 0 => t,
+            _ => TokenCounts {
+                input: entry.input,
+                output: entry.output,
+                cache_read: entry.cache_read,
+                cache_write: entry.cache_write,
+                reasoning: entry.reasoning,
+            },
+        };
+        let clients = match entry.clients {
+            Some(StringOrVec::One(s)) => s
+                .split(',')
+                .map(str::trim)
+                .filter(|c| !c.is_empty())
+                .map(str::to_string)
+                .collect(),
+            Some(StringOrVec::Many(v)) => v
+                .into_iter()
+                .map(|c| c.trim().to_string())
+                .filter(|c| !c.is_empty())
+                .collect(),
+            None => Vec::new(),
+        };
+
+        let model_count = entry.models.len();
+        let mut models = Vec::with_capacity(model_count);
+        for (idx, item) in entry.models.into_iter().enumerate() {
+            match item {
+                HourlyModelItem::Name(name) => {
+                    let trimmed = name.trim().to_string();
+                    if trimmed.is_empty() {
+                        continue;
+                    }
+                    let (m_tokens, m_cost) = if model_count == 1 && idx == 0 {
+                        (tokens, entry.cost)
+                    } else {
+                        (TokenCounts::default(), 0.0)
+                    };
+                    models.push((
+                        trimmed.clone(),
+                        HourlyModel {
+                            provider: String::new(),
+                            display_name: trimmed.clone(),
+                            color_key: trimmed,
+                            tokens: m_tokens,
+                            cost: m_cost,
+                        },
+                    ));
+                }
+                HourlyModelItem::Obj {
+                    model,
+                    provider,
+                    display_name,
+                    tokens: m_tokens,
+                    cost: m_cost,
+                } => {
+                    let key = if !model.trim().is_empty() {
+                        model.trim().to_string()
+                    } else {
+                        display_name.trim().to_string()
+                    };
+                    if key.is_empty() {
+                        continue;
+                    }
+                    let disp = if display_name.trim().is_empty() {
+                        key.clone()
+                    } else {
+                        display_name
+                    };
+                    models.push((
+                        key.clone(),
+                        HourlyModel {
+                            provider,
+                            display_name: disp,
+                            color_key: key,
+                            tokens: m_tokens,
+                            cost: m_cost,
+                        },
+                    ));
+                }
+            }
+        }
+
+        rows.push(HourlyRow {
+            datetime,
+            tokens,
+            cost: entry.cost,
+            clients,
+            models,
+            message_count: entry.message_count,
+            turn_count: entry.turn_count,
+        });
     }
+
+    Ok(rows)
+}
+
+fn parse_usage_cli_payload(value: &serde_json::Value) -> Result<UsageCache, String> {
+    let now_secs = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(1)
+        .max(1);
+
+    if value.is_array() {
+        let data: Vec<ProviderUsage> = serde_json::from_value(value.clone())
+            .map_err(|e| format!("Failed to parse usage array: {e}"))?;
+        Ok(UsageCache {
+            timestamp: now_secs,
+            data,
+        })
+    } else if let Some(inner) = value
+        .get("data")
+        .or_else(|| value.get("providers"))
+        .or_else(|| value.get("usage"))
+    {
+        let data: Vec<ProviderUsage> = serde_json::from_value(inner.clone())
+            .map_err(|e| format!("Failed to parse usage payload: {e}"))?;
+        let timestamp = value
+            .get("timestamp")
+            .and_then(|v| v.as_u64())
+            .filter(|&t| t > 0)
+            .unwrap_or(now_secs);
+        Ok(UsageCache { timestamp, data })
+    } else {
+        Err("Unexpected usage --json payload shape".to_string())
+    }
+}
+
+fn normalize_hour_key(raw: &str) -> String {
+    let normalized = raw.trim().replace('T', " ");
+    if normalized.len() >= 13 && normalized.as_bytes().get(13) == Some(&b':') {
+        return format!("{}:00", &normalized[..13]);
+    }
+    if normalized.len() >= 16 {
+        normalized[..16].to_string()
+    } else {
+        normalized
+    }
+}
+
+fn rebuild_graph_and_streaks(
+    daily: &[DailyRow],
+    intensity_by_date: &HashMap<String, f64>,
+    today: NaiveDate,
+) -> (Graph, u32, u32) {
+    let mut daily_by_date: HashMap<&str, &DailyRow> = HashMap::with_capacity(daily.len());
+    let mut max_date: Option<NaiveDate> = None;
+    let mut active_dates: Vec<NaiveDate> = Vec::new();
+    let mut max_cost = 0.0_f64;
+
+    for row in daily {
+        daily_by_date.insert(row.date.as_str(), row);
+        max_cost = max_cost.max(row.cost);
+        if let Some(date) = parse_date_prefix(&row.date) {
+            max_date = Some(max_date.map_or(date, |prev| prev.max(date)));
+            if row.cost > 0.0 || row.tokens.total() > 0 {
+                active_dates.push(date);
+            }
+        }
+    }
+
+    let Some(end_date) = max_date else {
+        return (Graph { weeks: Vec::new() }, 0, 0);
+    };
+
+    let end_sunday =
+        end_date - chrono::Duration::days(i64::from(end_date.weekday().num_days_from_sunday()));
+    let start_sunday = end_sunday - chrono::Duration::weeks(51);
+
+    let mut weeks = Vec::with_capacity(52);
+    for week_idx in 0..52_i64 {
+        let mut week = Vec::with_capacity(7);
+        for day_idx in 0..7_i64 {
+            let cell_date = start_sunday + chrono::Duration::days(week_idx * 7 + day_idx);
+            if cell_date > end_date {
+                week.push(None);
+                continue;
+            }
+            let date_str = cell_date.format("%Y-%m-%d").to_string();
+            if let Some(row) = daily_by_date.get(date_str.as_str()) {
+                let intensity = intensity_by_date
+                    .get(&date_str)
+                    .copied()
+                    .unwrap_or_else(|| {
+                        if row.cost <= 0.0 && row.tokens.total() == 0 {
+                            0.0
+                        } else if max_cost > 0.0 {
+                            ((row.cost / max_cost) * 4.0).ceil().clamp(1.0, 4.0)
+                        } else {
+                            1.0
+                        }
+                    });
+                week.push(Some(GraphCell {
+                    date: date_str,
+                    tokens: row.tokens,
+                    cost: row.cost,
+                    intensity,
+                }));
+            } else {
+                week.push(Some(GraphCell {
+                    date: date_str,
+                    tokens: TokenCounts::default(),
+                    cost: 0.0,
+                    intensity: 0.0,
+                }));
+            }
+        }
+        weeks.push(week);
+    }
+
+    active_dates.sort_unstable();
+    active_dates.dedup();
+    let (current_streak, longest_streak) = if active_dates.is_empty() {
+        (0, 0)
+    } else {
+        let mut longest = 1_u32;
+        let mut run = 1_u32;
+        for pair in active_dates.windows(2) {
+            if pair[1] - pair[0] == chrono::Duration::days(1) {
+                run += 1;
+                longest = longest.max(run);
+            } else {
+                run = 1;
+            }
+        }
+
+        let mut current = 0_u32;
+        if let Some(&last) = active_dates.last() {
+            if last == today || last == today - chrono::Duration::days(1) {
+                current = 1;
+                for pair in active_dates.windows(2).rev() {
+                    if pair[1] - pair[0] == chrono::Duration::days(1) {
+                        current += 1;
+                    } else {
+                        break;
+                    }
+                }
+            }
+        }
+        (current, longest)
+    };
+
+    (Graph { weeks }, current_streak, longest_streak)
 }
 
 fn parse_monthly_cli_rows(value: &serde_json::Value) -> Result<Vec<MonthlyCliRow>, String> {
@@ -1013,14 +1638,48 @@ mod tests {
                             "sessionCount": 2
                         }
                     ])),
-                    Some("daily") => Ok(serde_json::json!([
-                        {
-                            "date": "2026-11-21",
-                            "tokens": { "input": 100, "output": 20, "cacheRead": 300 },
-                            "cost": 1.25,
-                            "messageCount": 5
-                        }
-                    ])),
+                    Some("daily") => Err("error: unrecognized subcommand 'daily'".to_string()),
+                    Some("graph") => Ok(serde_json::json!({
+                        "meta": {},
+                        "summary": {},
+                        "years": [2026],
+                        "contributions": [
+                            {
+                                "date": "2026-11-21",
+                                "totals": { "tokens": 420, "cost": 1.25, "messages": 5 },
+                                "intensity": 4,
+                                "tokenBreakdown": { "input": 100, "output": 20, "cacheRead": 300, "cacheWrite": 0, "reasoning": 0 },
+                                "clients": [
+                                    {
+                                        "client": "claude",
+                                        "modelId": "claude-sonnet-4-5",
+                                        "providerId": "anthropic",
+                                        "tokens": { "input": 100, "output": 20, "cacheRead": 300, "cacheWrite": 0, "reasoning": 0 },
+                                        "cost": 1.25,
+                                        "messages": 5
+                                    }
+                                ]
+                            }
+                        ]
+                    })),
+                    Some("hourly") => Ok(serde_json::json!({
+                        "entries": [
+                            {
+                                "hour": "2026-11-21 10:00",
+                                "clients": ["claude"],
+                                "models": ["claude-sonnet-4-5"],
+                                "input": 100,
+                                "output": 20,
+                                "cacheRead": 300,
+                                "cacheWrite": 0,
+                                "messageCount": 5,
+                                "turnCount": 2,
+                                "cost": 1.25
+                            }
+                        ],
+                        "totalCost": 1.25,
+                        "processingTimeMs": 12
+                    })),
                     Some("monthly") => Ok(serde_json::json!([
                         {
                             "month": "2026-11",
@@ -1068,5 +1727,74 @@ mod tests {
         assert_eq!(dash.models.len(), 1);
         assert_eq!(dash.sources.clients.len(), 1);
         assert_eq!(dash.sources.clients[0].label, "Claude Code");
+
+        let today_tray = svc.tray_snapshot_at(RangePreset::Today, fixed_today());
+        assert!((today_tray.total.cost - 1.25).abs() < 1e-9);
+        assert_eq!(today_tray.bars.len(), 1);
+        assert_eq!(today_tray.bars[0].slot, "10:00");
+        assert_eq!(today_tray.top_models.len(), 1);
+    }
+
+    #[test]
+    fn update_usage_json_accepts_array_and_object_shapes() {
+        let svc = DataService::new_offline();
+
+        let array_payload = serde_json::json!([
+            {
+                "provider": "Copilot",
+                "plan": "Individual",
+                "metrics": [{ "label": "Chat", "remainingPercent": 80.0, "usedPercent": 20.0 }]
+            }
+        ]);
+        svc.update_usage_json(&array_payload)
+            .expect("array usage shape");
+        let dash = svc.dashboard_snapshot_at(&base_query(RangePreset::Today), fixed_today());
+        assert_eq!(dash.usage.len(), 1);
+        assert_eq!(dash.usage[0].provider, "Copilot");
+
+        let object_payload = serde_json::json!({
+            "timestamp": 1795200000_u64,
+            "data": [
+                {
+                    "provider": "Codex",
+                    "plan": "Pro",
+                    "metrics": [{ "label": "Weekly", "remainingPercent": 55.0, "usedPercent": 45.0 }]
+                }
+            ]
+        });
+        svc.update_usage_json(&object_payload)
+            .expect("object usage shape");
+        let dash2 = svc.dashboard_snapshot_at(&base_query(RangePreset::Today), fixed_today());
+        assert_eq!(dash2.usage.len(), 1);
+        assert_eq!(dash2.usage[0].provider, "Codex");
+    }
+
+    #[tokio::test]
+    async fn sessions_scope_covers_narrower_ranges_and_refetches_wider_ranges() {
+        let tmp = TempDir::new().expect("tempdir");
+        let cli = Arc::new(MockCli {
+            calls: Mutex::new(Vec::new()),
+        });
+        let svc = DataService::with_paths(
+            cli,
+            tmp.path().join("missing-tui.json"),
+            tmp.path().join("missing-usage.json"),
+        );
+
+        assert!(!svc.sessions_scope_covers(&base_query(RangePreset::Today)));
+
+        svc.refresh_sessions(RangePreset::SevenDays, None, None)
+            .await
+            .expect("refresh 7d");
+        assert!(svc.sessions_scope_covers(&base_query(RangePreset::Today)));
+        assert!(svc.sessions_scope_covers(&base_query(RangePreset::SevenDays)));
+        assert!(!svc.sessions_scope_covers(&base_query(RangePreset::ThirtyDays)));
+        assert!(!svc.sessions_scope_covers(&base_query(RangePreset::All)));
+
+        svc.refresh_sessions(RangePreset::All, None, None)
+            .await
+            .expect("refresh all");
+        assert!(svc.sessions_scope_covers(&base_query(RangePreset::ThirtyDays)));
+        assert!(svc.sessions_scope_covers(&base_query(RangePreset::All)));
     }
 }

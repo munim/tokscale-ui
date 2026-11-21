@@ -88,14 +88,39 @@ pub fn models_cli_args(group_by: Option<&str>, range_args: &[String]) -> Vec<Str
         args.push("--group-by".to_string());
         args.push(group.to_string());
     }
+    args.push("--no-spinner".to_string());
+    args.push("--offline".to_string());
     args.extend(range_args.iter().cloned());
     args
 }
 
 pub fn monthly_cli_args(range_args: &[String]) -> Vec<String> {
-    let mut args = vec!["monthly".to_string(), "--json".to_string()];
+    let mut args = vec![
+        "monthly".to_string(),
+        "--json".to_string(),
+        "--no-spinner".to_string(),
+        "--offline".to_string(),
+    ];
     args.extend(range_args.iter().cloned());
     args
+}
+
+pub fn graph_cli_args() -> Vec<String> {
+    vec![
+        "graph".to_string(),
+        "--no-spinner".to_string(),
+        "--offline".to_string(),
+    ]
+}
+
+pub fn hourly_cli_args() -> Vec<String> {
+    vec![
+        "hourly".to_string(),
+        "--json".to_string(),
+        "--no-spinner".to_string(),
+        "--offline".to_string(),
+        "--week".to_string(),
+    ]
 }
 
 pub fn clients_cli_args() -> Vec<String> {

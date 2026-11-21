@@ -214,7 +214,7 @@ impl AppState {
         app: Option<&AppHandle<Wry>>,
     ) -> Result<SyncStatus, String> {
         let _guard = match &mode {
-            SyncMode::FullManual => match self.sync_inflight.try_lock() {
+            SyncMode::LocalOffline => match self.sync_inflight.try_lock() {
                 Ok(guard) => guard,
                 Err(_) => {
                     return Ok(self
@@ -224,8 +224,33 @@ impl AppState {
                         .clone());
                 }
             },
-            SyncMode::LocalOffline | SyncMode::RetryClient(_) => self.sync_inflight.lock().await,
+            SyncMode::FullManual | SyncMode::RetryClient(_) => self.sync_inflight.lock().await,
         };
+
+        struct SyncStateGuard {
+            data: Arc<DataService>,
+            sync_status: Arc<RwLock<SyncStatus>>,
+            armed: bool,
+        }
+
+        impl SyncStateGuard {
+            fn disarm(&mut self) {
+                self.armed = false;
+            }
+        }
+
+        impl Drop for SyncStateGuard {
+            fn drop(&mut self) {
+                if self.armed {
+                    self.data.set_syncing(false);
+                    let mut status = self
+                        .sync_status
+                        .write()
+                        .unwrap_or_else(|e| e.into_inner());
+                    status.syncing = false;
+                }
+            }
+        }
 
         self.data.set_syncing(true);
         {
@@ -235,6 +260,11 @@ impl AppState {
                 .unwrap_or_else(|e| e.into_inner());
             status.syncing = true;
         }
+        let mut sync_guard = SyncStateGuard {
+            data: Arc::clone(&self.data),
+            sync_status: Arc::clone(&self.sync_status),
+            armed: true,
+        };
 
         let mut warnings: Vec<SourceWarning> = Vec::new();
         let mut any_success = false;
@@ -361,8 +391,18 @@ impl AppState {
                     )
                     .await
                 {
-                    Ok(_) => {
-                        any_success = true;
+                    Ok(raw_usage) => {
+                        if let Err(err) = self.data.update_usage_json(&raw_usage) {
+                            push_unique_warning(
+                                &mut warnings,
+                                SourceWarning {
+                                    source: "usage".to_string(),
+                                    message: err,
+                                },
+                            );
+                        } else {
+                            any_success = true;
+                        }
                     }
                     Err(err) => {
                         push_unique_warning(
@@ -513,6 +553,7 @@ impl AppState {
             status.warnings = warnings.clone();
             status.clone()
         };
+        sync_guard.disarm();
 
         update_tray_and_notify(self);
 
@@ -638,62 +679,17 @@ pub fn setup_app(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>>
     let initial_tray = state.data.tray_snapshot(active_range);
     controller.update_readout(&TraySnapshotLite::from(&initial_tray));
 
-    // Steps 4 & 5: Background CLI resolution, fallback if needed, watcher paths, and title enrichment
+    // Steps 4 & 5: Background CLI resolution, local offline sync when cache is missing/stale, and watcher paths
     let fallback_required = hydrate_report.fallback_required;
     let startup_handle = app_handle;
     tauri::async_runtime::spawn(async move {
         let st = startup_handle.state::<AppState>();
         let cli_info = st.data.refresh_cli_info().await;
 
-        if fallback_required {
-            match st.data.refresh_from_cli_fallback().await {
-                Ok(()) => {
-                    let now = current_unix_secs();
-                    {
-                        let mut status =
-                            st.sync_status.write().unwrap_or_else(|e| e.into_inner());
-                        status.last_synced_at = Some(now);
-                        status.warnings.retain(|w| w.source != "cache");
-                    }
-                    update_tray_and_notify(&st);
-                    let warnings = st
-                        .sync_status
-                        .read()
-                        .unwrap_or_else(|e| e.into_inner())
-                        .warnings
-                        .clone();
-                    let _ = startup_handle.emit(
-                        events::SNAPSHOT_UPDATED,
-                        SnapshotEvent {
-                            timestamp: now,
-                            partial: !warnings.is_empty(),
-                            warnings,
-                        },
-                    );
-                }
-                Err(err) => {
-                    let warning = SourceWarning {
-                        source: "cli".to_string(),
-                        message: err,
-                    };
-                    let warnings = {
-                        let mut status =
-                            st.sync_status.write().unwrap_or_else(|e| e.into_inner());
-                        if !status.warnings.contains(&warning) {
-                            status.warnings.push(warning);
-                        }
-                        status.warnings.clone()
-                    };
-                    let _ = startup_handle.emit(
-                        events::SNAPSHOT_UPDATED,
-                        SnapshotEvent {
-                            timestamp: current_unix_secs(),
-                            partial: true,
-                            warnings,
-                        },
-                    );
-                }
-            }
+        if cli_info.resolved_via != "none" && (fallback_required || !st.data.has_today_data()) {
+            let _ = st
+                .execute_sync_internal(SyncMode::LocalOffline, Some(&startup_handle))
+                .await;
         } else if cli_info.resolved_via != "none" {
             let _ = st.data.refresh_clients().await;
         }
@@ -718,28 +714,7 @@ pub fn setup_app(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>>
             .cloned()
         {
             ctrl.set_watch_paths(watch_paths);
-        }
-
-        let enrich_enabled = st
-            .prefs
-            .read()
-            .unwrap_or_else(|e| e.into_inner())
-            .session_title_enrichment;
-        if enrich_enabled && cli_info.resolved_via != "none" {
-            let _ = st.data.refresh_sessions(RangePreset::All, None, None).await;
-            if let Ok(updated_count) = st
-                .data
-                .enrich_session_titles(RangePreset::All, None, None)
-                .await
-            {
-                if updated_count > 0 {
-                    let _ = startup_handle.emit(
-                        events::SESSION_TITLES_UPDATED,
-                        SessionTitlesUpdatedEvent { updated_count },
-                    );
-                }
-            }
-        }
+        };
     });
 
     Ok(())
@@ -767,23 +742,14 @@ pub async fn get_sessions_view(
     state: State<'_, AppState>,
     query: SessionsQuery,
 ) -> Result<SessionsPayload, String> {
-    let all_check = SessionsQuery {
-        query: DashboardQuery {
-            range: RangePreset::All,
-            custom_since: None,
-            custom_until: None,
-            group_by: "client,session,model".to_string(),
-            active_clients: Vec::new(),
-            search: None,
-            sort: None,
-        },
-        enrich_titles: false,
-    };
-
-    if state.data.sessions_payload(&all_check).sessions.is_empty() {
+    if !state.data.sessions_scope_covers(&query.query) {
         state
             .data
-            .refresh_sessions(RangePreset::All, None, None)
+            .refresh_sessions(
+                query.query.range,
+                query.query.custom_since.as_deref(),
+                query.query.custom_until.as_deref(),
+            )
             .await?;
     }
 
@@ -793,8 +759,12 @@ pub async fn get_sessions_view(
         let prefs = state.prefs.read().unwrap_or_else(|e| e.into_inner());
         query.enrich_titles && prefs.session_title_enrichment
     };
+    let bounded_enrich_range = matches!(
+        query.query.range,
+        RangePreset::Today | RangePreset::SevenDays
+    );
 
-    if enrich_enabled {
+    if enrich_enabled && bounded_enrich_range {
         let data = Arc::clone(&state.data);
         let app_handle = app.clone();
         let range = query.query.range;
@@ -966,10 +936,13 @@ pub async fn export_json(
 }
 
 async fn refresh_quota_and_notify(app: &AppHandle<Wry>, state: &AppState) {
-    let _ = state
+    if let Ok(raw_usage) = state
         .cli
         .run_json::<serde_json::Value>(cli_commands::usage(), cli_commands::TIMEOUT_SHORT)
-        .await;
+        .await
+    {
+        let _ = state.data.update_usage_json(&raw_usage);
+    }
     let report = state.data.hydrate_from_disk();
     update_tray_and_notify(state);
 
