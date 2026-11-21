@@ -1,0 +1,354 @@
+import '@testing-library/jest-dom/vitest';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { COMMANDS, EVENTS, type RangePreset, type TraySnapshot } from '$lib/contracts/ipc';
+import { mockCliInfo, mockPreferences, mockTraySnapshot } from '$lib/contracts/mocks';
+
+const { invokeMock, listenMock, eventHandlers, unlistenMocks } = vi.hoisted(() => {
+  const eventHandlers = new Map<string, Set<(event: { payload: unknown }) => void>>();
+  const unlistenMocks: Array<ReturnType<typeof vi.fn>> = [];
+  const invokeMock = vi.fn();
+  const listenMock = vi.fn(async (eventName: string, cb: (event: { payload: unknown }) => void) => {
+    let listeners = eventHandlers.get(eventName);
+    if (!listeners) {
+      listeners = new Set();
+      eventHandlers.set(eventName, listeners);
+    }
+    listeners.add(cb);
+    const unlisten = vi.fn(() => {
+      listeners?.delete(cb);
+    });
+    unlistenMocks.push(unlisten);
+    return unlisten;
+  });
+  return { invokeMock, listenMock, eventHandlers, unlistenMocks };
+});
+
+vi.mock('@tauri-apps/api/core', () => ({
+  invoke: invokeMock,
+}));
+
+vi.mock('@tauri-apps/api/event', () => ({
+  listen: listenMock,
+}));
+
+import TrayApp from './TrayApp.svelte';
+
+function emitTauriEvent(eventName: string, payload: unknown): void {
+  const listeners = eventHandlers.get(eventName);
+  if (!listeners) return;
+  for (const cb of listeners) {
+    cb({ payload });
+  }
+}
+
+describe('TrayApp', () => {
+  let snapshotOverrides: Partial<Record<RangePreset, TraySnapshot>> = {};
+  let prefsState = mockPreferences();
+
+  beforeEach(() => {
+    snapshotOverrides = {};
+    prefsState = mockPreferences();
+    eventHandlers.clear();
+    unlistenMocks.length = 0;
+    invokeMock.mockReset();
+    listenMock.mockClear();
+    delete document.documentElement.dataset.theme;
+    document.documentElement.style.colorScheme = '';
+
+    Object.defineProperty(window, '__TAURI_INTERNALS__', {
+      value: {},
+      configurable: true,
+    });
+
+    invokeMock.mockImplementation(async (cmd: string, args?: Record<string, unknown>) => {
+      switch (cmd) {
+        case COMMANDS.getTraySnapshot: {
+          const range = (args?.range as RangePreset) ?? 'today';
+          return snapshotOverrides[range] ?? mockTraySnapshot(range);
+        }
+        case COMMANDS.getPreferences:
+          return { ...prefsState };
+        case COMMANDS.updatePreferences: {
+          const patch = (args?.patch as Partial<typeof prefsState>) ?? {};
+          prefsState = { ...prefsState, ...patch };
+          return { ...prefsState };
+        }
+        case COMMANDS.getCliInfo:
+          return mockCliInfo();
+        case COMMANDS.installOrUpgradeCli:
+          return { ok: true, message: 'tokscale 4.24.0 installed' };
+        case COMMANDS.triggerSync:
+          return { syncing: false, lastSyncedAt: 1795262500000, warnings: [] };
+        case COMMANDS.openDashboard:
+        case COMMANDS.dismissTray:
+        case COMMANDS.quitApp:
+          return undefined;
+        default:
+          return undefined;
+      }
+    });
+  });
+
+  afterEach(() => {
+    cleanup();
+    delete (window as unknown as Record<string, unknown>).__TAURI_INTERNALS__;
+  });
+
+  it('focuses Sync now on open and renders KPIs, chart, legend, and top 3 models', async () => {
+    render(TrayApp);
+
+    const syncBtn = screen.getByRole('button', { name: 'Sync now' });
+    expect(document.activeElement).toBe(syncBtn);
+
+    const todaySnap = mockTraySnapshot('today');
+    await screen.findByText(`$${todaySnap.total.cost.toFixed(2)}`);
+
+    const kpiSection = screen.getByLabelText('Usage summary');
+    expect(within(kpiSection).getByText('Cost')).toBeInTheDocument();
+    expect(within(kpiSection).getByText('Tokens')).toBeInTheDocument();
+    expect(within(kpiSection).getByText('Sessions')).toBeInTheDocument();
+
+    expect(screen.getByRole('img', { name: 'Usage cost by harness' })).toBeInTheDocument();
+    const modelsSection = screen.getByLabelText('Top models');
+    expect(within(modelsSection).getAllByRole('button')).toHaveLength(
+      Math.min(3, todaySnap.topModels.length),
+    );
+  });
+
+  it('caches per-range snapshots in memory and makes zero extra IPC calls when switching back and forth', async () => {
+    render(TrayApp);
+
+    const todaySnap = mockTraySnapshot('today');
+    await screen.findByText(`$${todaySnap.total.cost.toFixed(2)}`);
+
+    const snapshotCalls = () =>
+      invokeMock.mock.calls.filter(([cmd]) => cmd === COMMANDS.getTraySnapshot);
+
+    expect(snapshotCalls()).toHaveLength(1);
+    expect(snapshotCalls()[0][1]).toEqual({ range: 'today' });
+
+    const radios = screen.getAllByRole('radio');
+    const radio7d = radios.find((el) => el.textContent?.trim() === '7D')!;
+    const radioToday = radios.find((el) => el.textContent?.trim() === 'Today')!;
+    const radio30d = radios.find((el) => el.textContent?.trim() === '30D')!;
+
+    await fireEvent.click(radio7d);
+    const snap7d = mockTraySnapshot('7d');
+    await screen.findByText(`$${snap7d.total.cost.toFixed(2)}`);
+    expect(snapshotCalls()).toHaveLength(2);
+    expect(snapshotCalls()[1][1]).toEqual({ range: '7d' });
+
+    // Switch back to Today -> 0 additional IPC calls
+    await fireEvent.click(radioToday);
+    await screen.findByText(`$${todaySnap.total.cost.toFixed(2)}`);
+    expect(snapshotCalls()).toHaveLength(2);
+
+    // Switch back to 7D -> 0 additional IPC calls
+    await fireEvent.click(radio7d);
+    await screen.findByText(`$${snap7d.total.cost.toFixed(2)}`);
+    expect(snapshotCalls()).toHaveLength(2);
+
+    // Fetch 30D once -> 3rd call, then switch back to Today and 30D with 0 extra calls
+    await fireEvent.click(radio30d);
+    const snap30d = mockTraySnapshot('30d');
+    await screen.findByText(`$${snap30d.total.cost.toFixed(2)}`);
+    expect(snapshotCalls()).toHaveLength(3);
+
+    await fireEvent.click(radioToday);
+    await screen.findByText(`$${todaySnap.total.cost.toFixed(2)}`);
+    await fireEvent.click(radio30d);
+    await screen.findByText(`$${snap30d.total.cost.toFixed(2)}`);
+    expect(snapshotCalls()).toHaveLength(3);
+
+    // snapshot-updated refreshes active range and invalidates cache
+    emitTauriEvent(EVENTS.snapshotUpdated, {
+      timestamp: 1795262600000,
+      partial: false,
+      warnings: [],
+    });
+    await waitFor(() => {
+      expect(snapshotCalls()).toHaveLength(4);
+    });
+    expect(snapshotCalls()[3][1]).toEqual({ range: '30d' });
+  });
+
+  it('renders Empty state when range has zero usage and hides the chart', async () => {
+    const emptySnap: TraySnapshot = {
+      ...mockTraySnapshot('today'),
+      total: { cost: 0, tokens: 0, sessions: 0 },
+      bars: [],
+      harnesses: [],
+      topModels: [],
+    };
+    snapshotOverrides.today = emptySnap;
+
+    render(TrayApp);
+
+    await screen.findByText('No usage in this range');
+    expect(screen.queryByRole('img', { name: 'Usage cost by harness' })).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Top models')).not.toBeInTheDocument();
+  });
+
+  it('renders Syncing progress line while keeping existing snapshot visible', async () => {
+    render(TrayApp);
+
+    const todaySnap = mockTraySnapshot('today');
+    await screen.findByText(`$${todaySnap.total.cost.toFixed(2)}`);
+
+    emitTauriEvent(EVENTS.syncProgress, {
+      syncing: true,
+      completedSources: 2,
+      totalSources: 6,
+      message: 'Scanning Codex sessions…',
+    });
+
+    await screen.findByText('Scanning Codex sessions…');
+    expect(screen.getByRole('button', { name: 'Sync now' })).toHaveClass('is-syncing');
+    expect(screen.getByText(`$${todaySnap.total.cost.toFixed(2)}`)).toBeInTheDocument();
+    expect(screen.getByRole('img', { name: 'Usage cost by harness' })).toBeInTheDocument();
+  });
+
+  it('renders Partial warn banner on snapshot-updated with partial warnings and retries', async () => {
+    render(TrayApp);
+
+    const todaySnap = mockTraySnapshot('today');
+    await screen.findByText(`$${todaySnap.total.cost.toFixed(2)}`);
+
+    emitTauriEvent(EVENTS.snapshotUpdated, {
+      timestamp: 1795262700000,
+      partial: true,
+      warnings: [{ source: 'cursor', message: 'Token expired' }],
+    });
+
+    await screen.findByText('Token expired');
+    expect(screen.getByText('cursor')).toBeInTheDocument();
+
+    const retryBtn = screen.getByRole('button', { name: 'Retry' });
+    await fireEvent.click(retryBtn);
+
+    expect(invokeMock).toHaveBeenCalledWith(COMMANDS.triggerSync, {
+      mode: { retryClient: 'cursor' },
+    });
+  });
+
+  it('drills down into Models tab on TopModels click and Overview tab on Open dashboard', async () => {
+    render(TrayApp);
+
+    const todaySnap = mockTraySnapshot('today');
+    await screen.findByText(`$${todaySnap.total.cost.toFixed(2)}`);
+
+    const firstModel = todaySnap.topModels[0];
+    const modelsSection = screen.getByLabelText('Top models');
+    const firstModelBtn = within(modelsSection).getAllByRole('button')[0];
+
+    await fireEvent.click(firstModelBtn);
+    expect(invokeMock).toHaveBeenCalledWith(COMMANDS.openDashboard, {
+      handoff: {
+        tab: 'models',
+        range: 'today',
+        query: firstModel.model,
+      },
+    });
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Open dashboard' }));
+    expect(invokeMock).toHaveBeenCalledWith(COMMANDS.openDashboard, {
+      handoff: {
+        tab: 'overview',
+        range: 'today',
+      },
+    });
+  });
+
+  it('toggles QuickSettings, updates preferences/theme/CLI, and handles Escape and Quit', async () => {
+    const { unmount } = render(TrayApp);
+
+    const todaySnap = mockTraySnapshot('today');
+    await screen.findByText(`$${todaySnap.total.cost.toFixed(2)}`);
+
+    const gearBtn = screen.getByRole('button', { name: 'Sources & settings' });
+    expect(gearBtn).toHaveAttribute('aria-pressed', 'false');
+
+    await fireEvent.click(gearBtn);
+    expect(gearBtn).toHaveAttribute('aria-pressed', 'true');
+
+    // Sources retry on warn row
+    const retryButtons = screen.getAllByRole('button', { name: 'Retry' });
+    expect(retryButtons.length).toBeGreaterThan(0);
+    await fireEvent.click(retryButtons[0]);
+    expect(invokeMock).toHaveBeenCalledWith(COMMANDS.triggerSync, {
+      mode: { retryClient: 'trae' },
+    });
+
+    // Menubar display
+    const menubarGroup = screen.getByRole('radiogroup', { name: 'Menubar display' });
+    await fireEvent.click(within(menubarGroup).getByRole('radio', { name: 'Tokens' }));
+    expect(invokeMock).toHaveBeenCalledWith(COMMANDS.updatePreferences, {
+      patch: { menubarDisplay: 'tokens' },
+    });
+
+    // Theme update
+    const themeGroup = screen.getByRole('radiogroup', { name: 'Theme' });
+    await fireEvent.click(within(themeGroup).getByRole('radio', { name: 'Dark' }));
+    expect(document.documentElement.dataset.theme).toBe('dark');
+    expect(invokeMock).toHaveBeenCalledWith(COMMANDS.updatePreferences, {
+      patch: { theme: 'dark' },
+    });
+
+    // Launch at login
+    const launchCheckbox = screen.getByLabelText('Launch at login');
+    await fireEvent.click(launchCheckbox);
+    expect(invokeMock).toHaveBeenCalledWith(COMMANDS.updatePreferences, {
+      patch: { launchAtLogin: true },
+    });
+
+    // Global shortcut
+    const shortcutInput = screen.getByPlaceholderText('Not set');
+    await fireEvent.change(shortcutInput, { target: { value: 'Cmd+Shift+T' } });
+    expect(invokeMock).toHaveBeenCalledWith(COMMANDS.updatePreferences, {
+      patch: { globalShortcut: 'Cmd+Shift+T' },
+    });
+
+    // Alerts
+    const notifyCheckbox = screen.getByLabelText('Notify near quota limit');
+    await fireEvent.click(notifyCheckbox);
+    expect(invokeMock).toHaveBeenCalledWith(COMMANDS.updatePreferences, {
+      patch: { notificationsEnabled: true },
+    });
+
+    const quotaInput = screen.getByLabelText('Quota alert %');
+    await fireEvent.change(quotaInput, { target: { value: '90' } });
+    expect(invokeMock).toHaveBeenCalledWith(COMMANDS.updatePreferences, {
+      patch: { quotaAlertPercent: 90 },
+    });
+
+    // CLI install / upgrade
+    await fireEvent.click(screen.getByRole('button', { name: 'Install / Upgrade global tokscale' }));
+    expect(invokeMock).toHaveBeenCalledWith(COMMANDS.installOrUpgradeCli);
+    await screen.findByText('tokscale 4.24.0 installed');
+
+    // preferences-updated event applies theme immediately
+    emitTauriEvent(EVENTS.preferencesUpdated, {
+      ...prefsState,
+      theme: 'light',
+    });
+    await waitFor(() => {
+      expect(document.documentElement.dataset.theme).toBeUndefined();
+    });
+
+    // Escape calls dismiss_tray
+    await fireEvent.keyDown(window, { key: 'Escape' });
+    expect(invokeMock).toHaveBeenCalledWith(COMMANDS.dismissTray);
+
+    // Quit calls quit_app
+    await fireEvent.click(screen.getByRole('button', { name: 'Quit' }));
+    expect(invokeMock).toHaveBeenCalledWith(COMMANDS.quitApp);
+
+    // Listeners are cleaned up on unmount
+    unmount();
+    expect(unlistenMocks).toHaveLength(3);
+    for (const unlisten of unlistenMocks) {
+      expect(unlisten).toHaveBeenCalledTimes(1);
+    }
+  });
+});
