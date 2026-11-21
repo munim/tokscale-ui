@@ -1,5 +1,4 @@
 <script lang="ts">
-  import { save } from '@tauri-apps/plugin-dialog';
   import {
     ipc,
     isMockMode,
@@ -85,16 +84,9 @@
         ...query,
         activeClients: [...query.activeClients],
       });
-      const filename = `tokscale-${query.range}.json`;
-      if (isMockMode()) {
-        triggerBrowserDownload(filename, json);
-        return;
+      if (isMockMode() && json) {
+        triggerBrowserDownload(`tokscale-${query.range}.json`, json);
       }
-      await save({
-        title: 'Export Tokscale JSON',
-        defaultPath: filename,
-        filters: [{ name: 'JSON', extensions: ['json'] }],
-      });
     } finally {
       exporting = false;
     }
