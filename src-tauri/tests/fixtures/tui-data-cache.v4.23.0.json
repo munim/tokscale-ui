@@ -1,0 +1,546 @@
+{
+  "schemaVersion": 12,
+  "parserGeneration": 3431528046474800600,
+  "codexMaxDecodedBytes": 33554432,
+  "timestamp": 1795195069,
+  "enabledClients": [
+    "claude",
+    "codex",
+    "opencode",
+    "gemini",
+    "cursor"
+  ],
+  "includeSynthetic": false,
+  "groupBy": "model",
+  "reportScope": {
+    "since": null,
+    "until": null,
+    "year": null
+  },
+  "data": {
+    "models": [
+      {
+        "model": "claude-sonnet-4-5",
+        "colorKey": "claude-sonnet-4-5",
+        "provider": "anthropic",
+        "client": "claude, opencode",
+        "workspaceKey": "/Users/dev/work/toksacleui",
+        "workspaceLabel": "toksacleui",
+        "machine": "macbook-pro",
+        "tokens": {
+          "input": 420000,
+          "output": 85000,
+          "cacheRead": 1800000,
+          "cacheWrite": 120000,
+          "reasoning": 15000
+        },
+        "cost": 18.45,
+        "performance": {
+          "msPer1KTokens": 142.5,
+          "totalDurationMs": 347700,
+          "timedTokens": 2440000,
+          "sampleCount": 42,
+          "tokenCoverage": 0.98
+        },
+        "sessionCount": 8,
+        "groupKey": "claude-sonnet-4-5"
+      },
+      {
+        "model": "gpt-5.3-codex",
+        "colorKey": "gpt-5.3-codex",
+        "provider": "openai",
+        "client": "codex",
+        "workspaceKey": "/Users/dev/work/toksacleui",
+        "workspaceLabel": "toksacleui",
+        "machine": "macbook-pro",
+        "tokens": {
+          "input": 310000,
+          "output": 62000,
+          "cacheRead": 950000,
+          "cacheWrite": 0,
+          "reasoning": 48000
+        },
+        "cost": 12.10,
+        "performance": {
+          "msPer1KTokens": 98.2,
+          "totalDurationMs": 134534,
+          "timedTokens": 1370000,
+          "sampleCount": 29,
+          "tokenCoverage": 0.95
+        },
+        "sessionCount": 5,
+        "groupKey": "gpt-5.3-codex"
+      },
+      {
+        "model": "gemini-2.5-pro",
+        "colorKey": "gemini-2.5-pro",
+        "provider": "google",
+        "client": "gemini",
+        "workspaceKey": "/Users/dev/work/notes",
+        "workspaceLabel": "notes",
+        "machine": "macbook-pro",
+        "tokens": {
+          "input": 180000,
+          "output": 41000,
+          "cacheRead": 320000,
+          "cacheWrite": 0,
+          "reasoning": 22000
+        },
+        "cost": 6.25,
+        "performance": null,
+        "sessionCount": 3,
+        "groupKey": "gemini-2.5-pro"
+      }
+    ],
+    "agents": [
+      {
+        "agent": "Build",
+        "clients": "opencode",
+        "tokens": {
+          "input": 250000,
+          "output": 50000,
+          "cacheRead": 1100000,
+          "cacheWrite": 80000,
+          "reasoning": 10000
+        },
+        "cost": 11.40,
+        "messageCount": 64
+      },
+      {
+        "agent": "Plan",
+        "clients": "claude",
+        "tokens": {
+          "input": 170000,
+          "output": 35000,
+          "cacheRead": 700000,
+          "cacheWrite": 40000,
+          "reasoning": 5000
+        },
+        "cost": 7.05,
+        "messageCount": 31
+      }
+    ],
+    "daily": [
+      {
+        "date": "2026-10-10",
+        "tokens": {
+          "input": 90000,
+          "output": 18000,
+          "cacheRead": 210000,
+          "cacheWrite": 0,
+          "reasoning": 12000
+        },
+        "cost": 3.20,
+        "models": [],
+        "sourceBreakdown": [
+          [
+            "gemini",
+            {
+              "tokens": {
+                "input": 90000,
+                "output": 18000,
+                "cacheRead": 210000,
+                "cacheWrite": 0,
+                "reasoning": 12000
+              },
+              "cost": 3.20,
+              "models": [
+                [
+                  "gemini-2.5-pro",
+                  {
+                    "client": "",
+                    "provider": "google",
+                    "displayName": "gemini-2.5-pro",
+                    "colorKey": "gemini-2.5-pro",
+                    "tokens": {
+                      "input": 90000,
+                      "output": 18000,
+                      "cacheRead": 210000,
+                      "cacheWrite": 0,
+                      "reasoning": 12000
+                    },
+                    "cost": 3.20,
+                    "messages": 12,
+                    "performance": {
+                      "msPer1KTokens": null,
+                      "totalDurationMs": 0,
+                      "timedTokens": 0,
+                      "sampleCount": 0,
+                      "tokenCoverage": 0.0
+                    }
+                  }
+                ]
+              ]
+            }
+          ]
+        ],
+        "messageCount": 12,
+        "turnCount": 6
+      },
+      {
+        "date": "2026-11-01",
+        "tokens": {
+          "input": 220000,
+          "output": 45000,
+          "cacheRead": 520000,
+          "cacheWrite": 20000,
+          "reasoning": 25000
+        },
+        "cost": 7.85,
+        "models": [],
+        "sourceBreakdown": [
+          [
+            "codex",
+            {
+              "tokens": {
+                "input": 130000,
+                "output": 22000,
+                "cacheRead": 410000,
+                "cacheWrite": 0,
+                "reasoning": 15000
+              },
+              "cost": 4.80,
+              "models": [
+                [
+                  "gpt-5.3-codex",
+                  {
+                    "client": "",
+                    "provider": "openai",
+                    "displayName": "gpt-5.3-codex",
+                    "colorKey": "gpt-5.3-codex",
+                    "tokens": {
+                      "input": 130000,
+                      "output": 22000,
+                      "cacheRead": 410000,
+                      "cacheWrite": 0,
+                      "reasoning": 15000
+                    },
+                    "cost": 4.80,
+                    "messages": 18
+                  }
+                ]
+              ]
+            }
+          ],
+          [
+            "gemini",
+            {
+              "tokens": {
+                "input": 90000,
+                "output": 23000,
+                "cacheRead": 110000,
+                "cacheWrite": 20000,
+                "reasoning": 10000
+              },
+              "cost": 3.05,
+              "models": [
+                [
+                  "gemini-2.5-pro",
+                  {
+                    "client": "",
+                    "provider": "google",
+                    "displayName": "gemini-2.5-pro",
+                    "colorKey": "gemini-2.5-pro",
+                    "tokens": {
+                      "input": 90000,
+                      "output": 23000,
+                      "cacheRead": 110000,
+                      "cacheWrite": 20000,
+                      "reasoning": 10000
+                    },
+                    "cost": 3.05,
+                    "messages": 10
+                  }
+                ]
+              ]
+            }
+          ]
+        ],
+        "messageCount": 28,
+        "turnCount": 14
+      },
+      {
+        "date": "2026-11-15",
+        "tokens": {
+          "input": 310000,
+          "output": 62000,
+          "cacheRead": 1050000,
+          "cacheWrite": 55000,
+          "reasoning": 18000
+        },
+        "cost": 12.15,
+        "models": [],
+        "sourceBreakdown": [
+          [
+            "claude",
+            {
+              "tokens": {
+                "input": 210000,
+                "output": 42000,
+                "cacheRead": 750000,
+                "cacheWrite": 55000,
+                "reasoning": 8000
+              },
+              "cost": 8.45,
+              "models": [
+                [
+                  "claude-sonnet-4-5",
+                  {
+                    "client": "",
+                    "provider": "anthropic",
+                    "displayName": "claude-sonnet-4-5",
+                    "colorKey": "claude-sonnet-4-5",
+                    "tokens": {
+                      "input": 210000,
+                      "output": 42000,
+                      "cacheRead": 750000,
+                      "cacheWrite": 55000,
+                      "reasoning": 8000
+                    },
+                    "cost": 8.45,
+                    "messages": 22
+                  }
+                ]
+              ]
+            }
+          ],
+          [
+            "codex",
+            {
+              "tokens": {
+                "input": 100000,
+                "output": 20000,
+                "cacheRead": 300000,
+                "cacheWrite": 0,
+                "reasoning": 10000
+              },
+              "cost": 3.70,
+              "models": [
+                [
+                  "gpt-5.3-codex",
+                  {
+                    "client": "",
+                    "provider": "openai",
+                    "displayName": "gpt-5.3-codex",
+                    "colorKey": "gpt-5.3-codex",
+                    "tokens": {
+                      "input": 100000,
+                      "output": 20000,
+                      "cacheRead": 300000,
+                      "cacheWrite": 0,
+                      "reasoning": 10000
+                    },
+                    "cost": 3.70,
+                    "messages": 14
+                  }
+                ]
+              ]
+            }
+          ]
+        ],
+        "messageCount": 36,
+        "turnCount": 19
+      },
+      {
+        "date": "2026-11-21",
+        "tokens": {
+          "input": 290000,
+          "output": 63000,
+          "cacheRead": 1290000,
+          "cacheWrite": 45000,
+          "reasoning": 30000
+        },
+        "cost": 13.60,
+        "models": [],
+        "sourceBreakdown": [
+          [
+            "opencode",
+            {
+              "tokens": {
+                "input": 210000,
+                "output": 43000,
+                "cacheRead": 1050000,
+                "cacheWrite": 45000,
+                "reasoning": 7000
+              },
+              "cost": 10.00,
+              "models": [
+                [
+                  "claude-sonnet-4-5",
+                  {
+                    "client": "",
+                    "provider": "anthropic",
+                    "displayName": "claude-sonnet-4-5",
+                    "colorKey": "claude-sonnet-4-5",
+                    "tokens": {
+                      "input": 210000,
+                      "output": 43000,
+                      "cacheRead": 1050000,
+                      "cacheWrite": 45000,
+                      "reasoning": 7000
+                    },
+                    "cost": 10.00,
+                    "messages": 26
+                  }
+                ]
+              ]
+            }
+          ],
+          [
+            "codex",
+            {
+              "tokens": {
+                "input": 80000,
+                "output": 20000,
+                "cacheRead": 240000,
+                "cacheWrite": 0,
+                "reasoning": 23000
+              },
+              "cost": 3.60,
+              "models": [
+                [
+                  "gpt-5.3-codex",
+                  {
+                    "client": "",
+                    "provider": "openai",
+                    "displayName": "gpt-5.3-codex",
+                    "colorKey": "gpt-5.3-codex",
+                    "tokens": {
+                      "input": 80000,
+                      "output": 20000,
+                      "cacheRead": 240000,
+                      "cacheWrite": 0,
+                      "reasoning": 23000
+                    },
+                    "cost": 3.60,
+                    "messages": 11
+                  }
+                ]
+              ]
+            }
+          ]
+        ],
+        "messageCount": 37,
+        "turnCount": 20
+      }
+    ],
+    "hourly": [
+      {
+        "datetime": "2026-11-15 14:00:00",
+        "tokens": {
+          "input": 110000,
+          "output": 21000,
+          "cacheRead": 400000,
+          "cacheWrite": 25000,
+          "reasoning": 5000
+        },
+        "cost": 4.50,
+        "clients": ["claude"],
+        "models": [
+          [
+            "claude-sonnet-4-5",
+            {
+              "provider": "anthropic",
+              "displayName": "claude-sonnet-4-5",
+              "colorKey": "claude-sonnet-4-5",
+              "tokens": {
+                "input": 110000,
+                "output": 21000,
+                "cacheRead": 400000,
+                "cacheWrite": 25000,
+                "reasoning": 5000
+              },
+              "cost": 4.50
+            }
+          ]
+        ],
+        "messageCount": 14,
+        "turnCount": 7
+      },
+      {
+        "datetime": "2026-11-21 09:00:00",
+        "tokens": {
+          "input": 180000,
+          "output": 38000,
+          "cacheRead": 820000,
+          "cacheWrite": 30000,
+          "reasoning": 15000
+        },
+        "cost": 8.40,
+        "clients": ["opencode", "codex"],
+        "models": [
+          [
+            "claude-sonnet-4-5",
+            {
+              "provider": "anthropic",
+              "displayName": "claude-sonnet-4-5",
+              "colorKey": "claude-sonnet-4-5",
+              "tokens": {
+                "input": 120000,
+                "output": 26000,
+                "cacheRead": 640000,
+                "cacheWrite": 30000,
+                "reasoning": 5000
+              },
+              "cost": 6.10
+            }
+          ],
+          [
+            "gpt-5.3-codex",
+            {
+              "provider": "openai",
+              "displayName": "gpt-5.3-codex",
+              "colorKey": "gpt-5.3-codex",
+              "tokens": {
+                "input": 60000,
+                "output": 12000,
+                "cacheRead": 180000,
+                "cacheWrite": 0,
+                "reasoning": 10000
+              },
+              "cost": 2.30
+            }
+          ]
+        ],
+        "messageCount": 22,
+        "turnCount": 12
+      }
+    ],
+    "graph": {
+      "weeks": [
+        [
+          { "date": "2026-10-10", "tokens": 330000, "cost": 3.20, "intensity": 0.25 },
+          null,
+          null,
+          null,
+          null,
+          null,
+          null
+        ],
+        [
+          { "date": "2026-11-01", "tokens": 830000, "cost": 7.85, "intensity": 0.58 },
+          null,
+          null,
+          null,
+          null,
+          null,
+          null
+        ],
+        [
+          { "date": "2026-11-15", "tokens": 1495000, "cost": 12.15, "intensity": 0.89 },
+          null,
+          null,
+          null,
+          null,
+          null,
+          { "date": "2026-11-21", "tokens": 1718000, "cost": 13.60, "intensity": 1.0 }
+        ]
+      ]
+    },
+    "totalTokens": 4373000,
+    "undatedTokens": 0,
+    "totalCost": 36.80,
+    "currentStreak": 2,
+    "longestStreak": 7
+  }
+}
