@@ -82,6 +82,7 @@ describe('TrayApp', () => {
           return { syncing: false, lastSyncedAt: 1795262500000, warnings: [] };
         case COMMANDS.openDashboard:
         case COMMANDS.dismissTray:
+        case COMMANDS.resizeTray:
         case COMMANDS.quitApp:
           return undefined;
         default:
@@ -190,11 +191,12 @@ describe('TrayApp', () => {
     expect(screen.queryByLabelText('Top models')).not.toBeInTheDocument();
   });
 
-  it('renders Syncing progress line while keeping existing snapshot visible', async () => {
-    render(TrayApp);
+  it('renders sleek Syncing progress hairline in footer without in-flow banner shift', async () => {
+    const { container } = render(TrayApp);
 
     const todaySnap = mockTraySnapshot('today');
     await screen.findByText(`$${todaySnap.total.cost.toFixed(2)}`);
+    expect(container.querySelector('.tray-sync-line')).not.toBeInTheDocument();
 
     emitTauriEvent(EVENTS.syncProgress, {
       syncing: true,
@@ -205,6 +207,11 @@ describe('TrayApp', () => {
 
     await screen.findByText('Scanning Codex sessions…');
     expect(screen.getByRole('button', { name: 'Sync now' })).toHaveClass('is-syncing');
+    expect(container.querySelector('.tray-footer .tray-sync-line')).toBeInTheDocument();
+    expect(container.querySelector('.tray-sync-bar')).not.toBeInTheDocument();
+    expect(container.querySelector('.tray-footer-status')).toHaveTextContent(
+      'Scanning Codex sessions…',
+    );
     expect(screen.getByText(`$${todaySnap.total.cost.toFixed(2)}`)).toBeInTheDocument();
     expect(screen.getByRole('img', { name: 'Usage cost by harness' })).toBeInTheDocument();
   });
@@ -349,6 +356,82 @@ describe('TrayApp', () => {
     expect(unlistenMocks).toHaveLength(3);
     for (const unlisten of unlistenMocks) {
       expect(unlisten).toHaveBeenCalledTimes(1);
+    }
+  });
+
+  it('resizes native tray popover to shell height and formats Unix-second lastSyncedAt', async () => {
+    let shellHeight = 428;
+    let triggerResize: () => void = () => {};
+    const disconnectSpy = vi.fn();
+
+    class MockResizeObserver {
+      constructor(cb: ResizeObserverCallback) {
+        triggerResize = () => cb([], this as unknown as ResizeObserver);
+      }
+      observe() {}
+      unobserve() {}
+      disconnect() {
+        disconnectSpy();
+      }
+    }
+
+    vi.stubGlobal('ResizeObserver', MockResizeObserver);
+    const rectSpy = vi
+      .spyOn(HTMLElement.prototype, 'getBoundingClientRect')
+      .mockImplementation(() => ({
+        x: 0,
+        y: 0,
+        top: 0,
+        left: 0,
+        right: 360,
+        bottom: shellHeight,
+        width: 360,
+        height: shellHeight,
+        toJSON: () => ({}),
+      }));
+
+    try {
+      const nowSecs = Math.floor(Date.now() / 1000);
+      snapshotOverrides.today = {
+        ...mockTraySnapshot('today'),
+        syncStatus: {
+          syncing: false,
+          lastSyncedAt: nowSecs - 120,
+          warnings: [],
+        },
+      };
+
+      const { unmount } = render(TrayApp);
+
+      await screen.findByText('Synced 2m ago');
+      expect(screen.queryByText(/20758d ago/)).not.toBeInTheDocument();
+
+      const resizeCalls = () =>
+        invokeMock.mock.calls.filter(([cmd]) => cmd === COMMANDS.resizeTray);
+
+      await waitFor(() => {
+        expect(resizeCalls()).toEqual([[COMMANDS.resizeTray, { height: 428 }]]);
+      });
+
+      // Unchanged height should not emit duplicate IPC calls
+      triggerResize();
+      expect(resizeCalls()).toHaveLength(1);
+
+      // Shrinking content (e.g. switching to empty range) updates native popover height
+      shellHeight = 304;
+      triggerResize();
+      await waitFor(() => {
+        expect(resizeCalls()).toEqual([
+          [COMMANDS.resizeTray, { height: 428 }],
+          [COMMANDS.resizeTray, { height: 304 }],
+        ]);
+      });
+
+      unmount();
+      expect(disconnectSpy).toHaveBeenCalledTimes(1);
+    } finally {
+      rectSpy.mockRestore();
+      vi.unstubAllGlobals();
     }
   });
 });

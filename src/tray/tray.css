@@ -14,9 +14,10 @@ body {
 }
 
 .tray-shell {
+  position: relative;
   width: 360px;
   max-width: 100%;
-  max-height: min(560px, 100vh);
+  max-height: 560px;
   display: flex;
   flex-direction: column;
   padding: 10px 12px;

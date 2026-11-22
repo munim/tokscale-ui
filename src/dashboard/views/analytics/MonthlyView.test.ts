@@ -46,6 +46,19 @@ describe('MonthlyView', () => {
     expect(footerRow).toHaveTextContent('Total');
     const totalCost = snapshot.monthly.reduce((sum, row) => sum + row.cost, 0);
     expect(footerRow).toHaveTextContent(formatUsd(totalCost));
+
+    const headerCells = Array.from(container.querySelectorAll('thead th'));
+    const bodyCells = Array.from(
+      container.querySelectorAll('tbody tr[data-row-key]:first-of-type td'),
+    );
+    const footerCells = Array.from(container.querySelectorAll('tfoot tr.monthly-totals-row td'));
+    expect(footerCells).toHaveLength(headerCells.length);
+    expect(footerCells[0]).not.toHaveClass('is-end');
+    for (let i = 1; i < footerCells.length; i++) {
+      expect(headerCells[i]).toHaveClass('is-end');
+      expect(bodyCells[i]).toHaveClass('is-end', 'ui-table-num');
+      expect(footerCells[i]).toHaveClass('is-end', 'ui-table-num');
+    }
   });
 
   it('renders EmptyState when monthly list is empty', () => {

@@ -860,6 +860,16 @@ pub async fn dismiss_tray(state: State<'_, AppState>) -> Result<(), String> {
 }
 
 #[tauri::command]
+pub async fn resize_tray(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    height: f64,
+) -> Result<(), String> {
+    crate::shell::popover::resize_popover(&app, &state.shell_state, height)
+        .map_err(|err| err.to_string())
+}
+
+#[tauri::command]
 pub async fn quit_app(app: AppHandle, state: State<'_, AppState>) -> Result<(), String> {
     let controller = state
         .shell

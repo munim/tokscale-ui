@@ -170,7 +170,10 @@ pub fn show_popover(
     tray_rect: Option<Rect>,
 ) {
     if let Some(rect) = tray_rect {
+        write_state(state).last_tray_rect = Some(rect);
         position_popover_near_tray(window, rect);
+    } else if let Some(saved_rect) = read_state(state).last_tray_rect {
+        position_popover_near_tray(window, saved_rect);
     } else {
         position_popover_default(window);
     }
@@ -203,6 +206,38 @@ pub fn set_popover_height(app: &AppHandle<Wry>, logical_height: f64) -> tauri::R
             clamped,
         )))?;
     }
+    Ok(())
+}
+
+pub fn resize_popover(
+    app: &AppHandle<Wry>,
+    state: &Arc<RwLock<ShellState>>,
+    logical_height: f64,
+) -> tauri::Result<()> {
+    let Some(window) = app.get_webview_window(TRAY_WINDOW_LABEL) else {
+        return Ok(());
+    };
+
+    let prev_pos = window.outer_position().ok();
+    let clamped = clamp_popover_height(logical_height);
+    window.set_size(Size::Logical(LogicalSize::new(
+        POPOVER_WIDTH_LOGICAL,
+        clamped,
+    )))?;
+
+    let is_visible = window
+        .is_visible()
+        .unwrap_or_else(|_| read_state(state).tray_visible);
+    if is_visible {
+        if let Some(rect) = read_state(state).last_tray_rect {
+            position_popover_near_tray(&window, rect);
+        } else if PopoverPlatform::current() == PopoverPlatform::Windows {
+            position_popover_default(&window);
+        } else if let Some(pos) = prev_pos {
+            let _ = window.set_position(Position::Physical(pos));
+        }
+    }
+
     Ok(())
 }
 
@@ -398,5 +433,69 @@ mod tests {
         assert_eq!(clamp_popover_height(420.0), 420.0);
         assert_eq!(clamp_popover_height(900.0), 560.0);
         assert_eq!(clamp_popover_height(f64::NAN), 520.0);
+    }
+
+    #[test]
+    fn resized_popover_preserves_tray_anchor_on_macos_and_windows() {
+        assert!(ShellState::default().last_tray_rect.is_none());
+
+        let mac_work = WorkAreaBounds {
+            x: 0,
+            y: 25,
+            width: 1440,
+            height: 875,
+        };
+        let mac_tray = TrayIconBounds {
+            x: 1200,
+            y: 2,
+            width: 28,
+            height: 22,
+        };
+        let (_, y_520) = calculate_popover_position(
+            PopoverPlatform::MacOs,
+            mac_tray,
+            PopoverSize {
+                width: 360,
+                height: 520,
+            },
+            mac_work,
+            1.0,
+        );
+        let (_, y_304) = calculate_popover_position(
+            PopoverPlatform::MacOs,
+            mac_tray,
+            PopoverSize {
+                width: 360,
+                height: 304,
+            },
+            mac_work,
+            1.0,
+        );
+        assert_eq!(y_520, 33);
+        assert_eq!(y_304, 33);
+
+        let win_work = WorkAreaBounds {
+            x: 0,
+            y: 0,
+            width: 1920,
+            height: 1032,
+        };
+        let win_tray = TrayIconBounds {
+            x: 1700,
+            y: 1040,
+            width: 32,
+            height: 32,
+        };
+        let (_, win_y_304) = calculate_popover_position(
+            PopoverPlatform::Windows,
+            win_tray,
+            PopoverSize {
+                width: 360,
+                height: 304,
+            },
+            win_work,
+            1.0,
+        );
+        assert_eq!(win_y_304, 1032 - 304 - 8);
     }
 }

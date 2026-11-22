@@ -13,6 +13,7 @@ describe('frozen contracts and deterministic mocks', () => {
   it('exposes frozen command and event names', () => {
     expect(COMMANDS.getTraySnapshot).toBe('get_tray_snapshot');
     expect(COMMANDS.getDashboardSnapshot).toBe('get_dashboard_snapshot');
+    expect(COMMANDS.resizeTray).toBe('resize_tray');
     expect(COMMANDS.exportJson).toBe('export_json');
     expect(EVENTS.snapshotUpdated).toBe('tokscale://snapshot-updated');
     expect(EVENTS.dashboardNavigate).toBe('tokscale://dashboard-navigate');
@@ -90,6 +91,8 @@ describe('frozen contracts and deterministic mocks', () => {
 
     const cli = await ipc.getCliInfo();
     expect(cli).toEqual(mockCliInfo());
+
+    await expect(ipc.resizeTray(420)).resolves.toBeUndefined();
   });
 
   it('builds consistent sessions payload and session detail', () => {

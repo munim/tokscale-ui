@@ -171,6 +171,14 @@ export class DashboardRouter {
     void this.fetchSnapshot();
   }
 
+  clearClients(): void {
+    if (this.query.activeClients.length === 0) {
+      return;
+    }
+    this.query.activeClients = [];
+    void this.fetchSnapshot();
+  }
+
   setSearch(value: string, immediate = false): void {
     this.query.search = value;
     this.clearSearchTimer();

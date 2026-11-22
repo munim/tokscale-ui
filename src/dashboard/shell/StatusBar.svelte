@@ -19,7 +19,7 @@
   });
 
   let syncText = $derived(
-    lastSyncedAt !== undefined
+    lastSyncedAt !== undefined && lastSyncedAt > 0
       ? `Last sync ${formatRelative(lastSyncedAt, now)}`
       : 'Not synced yet',
   );

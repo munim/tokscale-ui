@@ -100,6 +100,7 @@ export const COMMANDS = {
   triggerSync: 'trigger_sync',
   openDashboard: 'open_dashboard',
   dismissTray: 'dismiss_tray',
+  resizeTray: 'resize_tray',
   quitApp: 'quit_app',
   getPreferences: 'get_preferences',
   updatePreferences: 'update_preferences',
@@ -385,6 +386,13 @@ export const ipc = {
       return;
     }
     await invoke<void>(COMMANDS.dismissTray);
+  },
+
+  async resizeTray(height: number): Promise<void> {
+    if (!Number.isFinite(height) || height <= 0 || isMockMode()) {
+      return;
+    }
+    await invoke<void>(COMMANDS.resizeTray, { height });
   },
 
   async quitApp(): Promise<void> {

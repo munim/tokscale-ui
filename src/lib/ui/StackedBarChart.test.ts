@@ -76,4 +76,28 @@ describe('StackedBarChart', () => {
     expect(document.activeElement).toBe(bars[1]);
     expect(screen.getByText('Nov 21 · 29')).toBeInTheDocument();
   });
+
+  it('locks readout to single-line no-wrap and exposes full breakdown title on hover', async () => {
+    const { container } = render(StackedBarChart, {
+      props: {
+        bars: manySegmentBars,
+        valueFormat: 'usd',
+        compact: true,
+        ariaLabel: 'Cost by harness',
+      },
+    });
+
+    const readout = container.querySelector('.ui-chart-readout') as HTMLElement;
+    expect(readout).toHaveTextContent('Hover a bar');
+    expect(readout).not.toHaveAttribute('title');
+
+    const firstBar = container.querySelector('[data-bar-index="0"]') as SVGGElement;
+    await fireEvent.mouseEnter(firstBar);
+
+    expect(readout).toHaveAttribute(
+      'title',
+      expect.stringContaining('Nov 20 · $70.00 — Claude Code $20.00'),
+    );
+    expect(container.querySelector('.ui-chart-readout-segs')).toBeInTheDocument();
+  });
 });

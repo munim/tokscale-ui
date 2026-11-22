@@ -51,6 +51,18 @@ describe('formatters', () => {
     expect(formatRelative(now.getTime() - 120_000, now)).toBe('2m ago');
     expect(formatRelativeTime(now.getTime() - 3 * 3_600_000, now)).toBe('3h ago');
     expect(formatRelative(now.getTime() - 2 * 86_400_000, now)).toBe('2d ago');
+
+    // Unix seconds timestamps from Tauri backend / tui-data-cache.json
+    const nowSecs = Math.floor(now.getTime() / 1000);
+    expect(formatRelative(nowSecs - 10, now)).toBe('just now');
+    expect(formatRelative(nowSecs - 120, now)).toBe('2m ago');
+    expect(formatRelative(nowSecs - 3 * 3_600, now)).toBe('3h ago');
+    expect(formatRelative(nowSecs - 2 * 86_400, now)).toBe('2d ago');
+
+    // Non-positive or invalid timestamps
+    expect(formatRelative(0, now)).toBe('just now');
+    expect(formatRelative(-100, now)).toBe('just now');
+    expect(formatRelative(Number.NaN, now)).toBe('just now');
   });
 
   it('formats countdowns accurately', () => {

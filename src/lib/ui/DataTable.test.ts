@@ -1,5 +1,9 @@
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import '@testing-library/jest-dom/vitest';
 import { fireEvent, render, screen } from '@testing-library/svelte';
+import { createRawSnippet } from 'svelte';
+import { compile } from 'svelte/compiler';
 import { describe, expect, it, vi } from 'vitest';
 import DataTable from './DataTable.svelte';
 import type { ColumnDef } from './types';
@@ -77,5 +81,37 @@ describe('DataTable', () => {
     const costSortBtn = screen.getByRole('button', { name: /Cost/ });
     await fireEvent.click(costSortBtn);
     expect(onsort).toHaveBeenCalledWith('cost');
+  });
+
+  it('applies end-alignment and numeric styles to footer snippet cells', () => {
+    const rows: TestRow[] = [{ id: '1', group: 'Alpha', name: 'Row A', cost: 12.5 }];
+    const footer = createRawSnippet(() => ({
+      render: () =>
+        '<tr class="totals-row"><td>Total</td><td class="is-end ui-table-num">12.50</td></tr>',
+    }));
+
+    const { container } = render(DataTable<TestRow>, {
+      props: {
+        columns,
+        rows,
+        rowKey: (r) => r.id,
+        footer,
+      },
+    });
+
+    const footerCells = container.querySelectorAll('tfoot.ui-table-foot tr td');
+    expect(footerCells).toHaveLength(2);
+    expect(footerCells[0]).toHaveTextContent('Total');
+    expect(footerCells[0]).not.toHaveClass('is-end');
+    expect(footerCells[1]).toHaveClass('is-end', 'ui-table-num');
+
+    // Verify Svelte compiled CSS leaves tr td.is-end and tr td.ui-table-num unscoped inside .ui-table-foot
+    // so parent-rendered footer snippets match right-alignment and tabular monospace rules.
+    const source = readFileSync(resolve(__dirname, 'DataTable.svelte'), 'utf8');
+    const compiledCss = compile(source, { filename: 'DataTable.svelte', css: 'external' }).css?.code ?? '';
+    expect(compiledCss).toMatch(/\.ui-table-foot\.svelte-[\w-]+\s+tr td\.is-end\s*\{[^}]*text-align:\s*end/);
+    expect(compiledCss).toMatch(
+      /\.ui-table-foot\.svelte-[\w-]+\s+tr td\.ui-table-num\s*\{[^}]*font-variant-numeric:\s*tabular-nums/,
+    );
   });
 });

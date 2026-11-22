@@ -99,6 +99,7 @@ pub struct ShellState {
     pub dashboard_open: bool,
     pub tray_visible: bool,
     pub tray_alive: bool,
+    pub last_tray_rect: Option<tauri::Rect>,
     pub dock_policy: DockPolicy,
     pub warnings: Vec<SourceWarning>,
     pub config_dir: Option<PathBuf>,
@@ -115,6 +116,7 @@ impl Default for ShellState {
             dashboard_open: false,
             tray_visible: false,
             tray_alive: false,
+            last_tray_rect: None,
             dock_policy: DockPolicy::Accessory,
             warnings: Vec::new(),
             config_dir: None,
@@ -268,6 +270,10 @@ impl ShellController {
 
     pub fn set_popover_height(&self, logical_height: f64) -> tauri::Result<()> {
         popover::set_popover_height(&self.inner.app, logical_height)
+    }
+
+    pub fn resize_popover(&self, logical_height: f64) -> tauri::Result<()> {
+        popover::resize_popover(&self.inner.app, &self.inner.state, logical_height)
     }
 
     pub fn set_preferences(

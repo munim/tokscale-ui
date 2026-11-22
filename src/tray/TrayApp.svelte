@@ -3,6 +3,7 @@
   import '../styles/tokens.css';
   import '$lib/ui/ui.css';
   import './tray.css';
+  import { ipc } from '$lib/contracts/ipc';
   import { EmptyState } from '$lib/ui';
   import FooterActions from './components/FooterActions.svelte';
   import HarnessChart from './components/HarnessChart.svelte';
@@ -15,12 +16,40 @@
   import { createTrayStore } from './store.svelte';
 
   const store = createTrayStore();
+  let shellEl = $state<HTMLElement | null>(null);
   let firstActionEl = $state<HTMLButtonElement | null>(null);
 
   onMount(() => {
     const cleanup = store.init();
     firstActionEl?.focus();
     return cleanup;
+  });
+
+  $effect(() => {
+    const el = shellEl;
+    if (!el) return;
+
+    let lastHeight = 0;
+    const syncHeight = () => {
+      const rectHeight = Math.ceil(el.getBoundingClientRect().height);
+      const nextHeight = rectHeight > 0 ? rectHeight : el.offsetHeight;
+      if (nextHeight > 0 && nextHeight !== lastHeight) {
+        lastHeight = nextHeight;
+        void ipc.resizeTray(nextHeight).catch(() => {});
+      }
+    };
+
+    syncHeight();
+
+    if (typeof ResizeObserver === 'undefined') {
+      return;
+    }
+
+    const observer = new ResizeObserver(() => {
+      syncHeight();
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
   });
 
   function handleWindowKeydown(event: KeyboardEvent): void {
@@ -41,7 +70,7 @@
 
 <svelte:window onkeydown={handleWindowKeydown} />
 
-<main class="tray-shell ui-root" data-view="tray">
+<main bind:this={shellEl} class="tray-shell ui-root" data-view="tray">
   <TrayHeader
     syncing={store.isSyncing}
     settingsOpen={store.settingsOpen}
@@ -51,8 +80,6 @@
   />
 
   <StateBanner
-    syncing={store.isSyncing}
-    syncProgress={store.syncProgress}
     partial={store.isPartial}
     warnings={store.warnings}
     error={store.error}
@@ -106,6 +133,8 @@
 
   <FooterActions
     syncing={store.isSyncing}
+    syncProgress={store.syncProgress}
+    syncMessage={store.syncProgress?.message}
     lastSyncedAt={store.snapshot?.syncStatus.lastSyncedAt}
     hasWarnings={store.isPartial}
     onopen={store.openDashboard}

@@ -28,11 +28,11 @@
   .ui-kpi-card {
     display: flex;
     flex-direction: column;
-    gap: 4px;
-    padding: 12px 14px;
-    border-radius: var(--radius);
-    background: var(--surface);
-    border: 1px solid var(--border);
+    gap: 3px;
+    padding: var(--kpi-card-padding, 11px 14px);
+    border-radius: var(--kpi-card-radius, var(--radius));
+    background: var(--kpi-card-bg, var(--surface));
+    border: var(--kpi-card-border, 1px solid var(--border));
     min-width: 0;
   }
 
@@ -44,8 +44,9 @@
   }
 
   .ui-kpi-label {
-    font-size: 12px;
+    font-size: 11.5px;
     font-weight: 500;
+    letter-spacing: 0.005em;
     color: var(--muted);
     white-space: nowrap;
     overflow: hidden;
@@ -80,11 +81,11 @@
   .ui-kpi-value {
     font-family: var(--font-mono);
     font-variant-numeric: tabular-nums;
-    font-size: 20px;
+    font-size: 19.5px;
     font-weight: 600;
-    line-height: 1.2;
+    line-height: 1.22;
     color: var(--fg);
-    letter-spacing: -0.02em;
+    letter-spacing: -0.025em;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;

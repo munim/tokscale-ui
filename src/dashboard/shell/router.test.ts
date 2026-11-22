@@ -190,4 +190,43 @@ describe('DashboardRouter', () => {
 
     stop();
   });
+
+  it('clears active client filters via clearClients() and skips fetch when already empty', async () => {
+    const getDashboardSnapshot = vi.fn(async (q: DashboardQuery) => mockDashboardSnapshot(q));
+    const router = createDashboardRouter({
+      getDashboardSnapshot,
+      getPreferences: vi.fn(async () => mockPreferences()),
+      onDashboardNavigate: async () => () => {},
+      onSnapshotUpdated: async () => () => {},
+      onSyncProgress: async () => () => {},
+      onPreferencesUpdated: async () => () => {},
+      applyTheme: vi.fn(),
+    });
+
+    const stop = router.start();
+    await flushPromises();
+    expect(getDashboardSnapshot).toHaveBeenCalledTimes(1);
+
+    // No-op when activeClients is already empty
+    router.clearClients();
+    await flushPromises();
+    expect(getDashboardSnapshot).toHaveBeenCalledTimes(1);
+
+    router.toggleClient('claude');
+    await flushPromises();
+    router.toggleClient('codex');
+    await flushPromises();
+    expect(router.query.activeClients).toEqual(['claude', 'codex']);
+    expect(getDashboardSnapshot).toHaveBeenCalledTimes(3);
+
+    router.clearClients();
+    await flushPromises();
+    expect(router.query.activeClients).toEqual([]);
+    expect(getDashboardSnapshot).toHaveBeenCalledTimes(4);
+    expect(getDashboardSnapshot).toHaveBeenLastCalledWith(
+      expect.objectContaining({ activeClients: [] }),
+    );
+
+    stop();
+  });
 });

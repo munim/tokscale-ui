@@ -23,10 +23,11 @@ export function addDays(key: string, delta: number): string {
 }
 
 export function formatRelative(timestampMs: number, now: Date = new Date()): string {
-  if (!Number.isFinite(timestampMs)) {
+  if (!Number.isFinite(timestampMs) || timestampMs <= 0) {
     return 'just now';
   }
-  const diffMs = now.getTime() - timestampMs;
+  const normalizedMs = timestampMs < 1e11 ? timestampMs * 1000 : timestampMs;
+  const diffMs = now.getTime() - normalizedMs;
   if (diffMs < 45_000) {
     return 'just now';
   }

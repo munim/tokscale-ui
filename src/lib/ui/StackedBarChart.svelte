@@ -133,6 +133,39 @@
   });
 
   let activeBar = $derived(activeIndex !== null ? preparedBars[activeIndex] ?? null : null);
+  let activeBarTitle = $derived.by(() => {
+    if (!activeBar) return undefined;
+    const segSummary = activeBar.segments
+      .map((seg) => `${seg.label} ${formatValue(seg.value)}`)
+      .join(' · ');
+    return segSummary
+      ? `${activeBar.label} · ${formatValue(activeBar.total)} — ${segSummary}`
+      : `${activeBar.label} · ${formatValue(activeBar.total)}`;
+  });
+
+  let segsEl = $state<HTMLSpanElement | null>(null);
+  let segsOverflow = $state(false);
+
+  $effect(() => {
+    const el = segsEl;
+    void activeBar;
+    if (!el) {
+      segsOverflow = false;
+      return;
+    }
+
+    const updateOverflow = () => {
+      segsOverflow = el.clientWidth > 0 && el.scrollWidth > el.clientWidth + 1;
+    };
+    updateOverflow();
+
+    if (typeof ResizeObserver === 'undefined') {
+      return;
+    }
+    const observer = new ResizeObserver(updateOverflow);
+    observer.observe(el);
+    return () => observer.disconnect();
+  });
 
   function focusBar(nextIndex: number): void {
     if (preparedBars.length === 0) return;
@@ -168,12 +201,16 @@
 </script>
 
 <div class="ui-chart">
-  <div class="ui-chart-readout" aria-live="polite">
+  <div class="ui-chart-readout" aria-live="polite" title={activeBarTitle}>
     {#if activeBar}
       <span class="ui-chart-readout-total">
         {activeBar.label} · {formatValue(activeBar.total)}
       </span>
-      <span class="ui-chart-readout-segs">
+      <span
+        bind:this={segsEl}
+        class="ui-chart-readout-segs"
+        class:is-overflowing={segsOverflow}
+      >
         {#each activeBar.segments as seg (seg.id)}
           <span class="ui-chart-readout-seg">
             <span class="ui-chart-dot" style:background={seg.color} aria-hidden="true"></span>
@@ -275,35 +312,54 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    flex-wrap: wrap;
-    gap: 6px 10px;
+    flex-wrap: nowrap;
+    gap: 8px;
+    height: 20px;
     min-height: 20px;
+    max-height: 20px;
+    line-height: 1.2;
     font-size: 11.5px;
     color: var(--muted);
+    white-space: nowrap;
+    overflow: hidden;
   }
 
   .ui-chart-readout-idle {
     color: var(--muted);
+    white-space: nowrap;
   }
 
   .ui-chart-readout-total {
+    flex: 0 0 auto;
     font-family: var(--font-mono);
     font-variant-numeric: tabular-nums;
     font-weight: 600;
     color: var(--fg);
+    white-space: nowrap;
   }
 
   .ui-chart-readout-segs {
-    display: inline-flex;
+    margin-left: auto;
+    display: flex;
     align-items: center;
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
     gap: 8px;
+    min-width: 0;
+    overflow: hidden;
+    white-space: nowrap;
+  }
+
+  .ui-chart-readout-segs.is-overflowing {
+    mask-image: linear-gradient(to right, #000 calc(100% - 18px), transparent 100%);
+    -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 18px), transparent 100%);
   }
 
   .ui-chart-readout-seg {
     display: inline-flex;
     align-items: center;
+    flex-shrink: 0;
     gap: 4px;
+    white-space: nowrap;
   }
 
   .ui-chart-dot {

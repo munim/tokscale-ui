@@ -22,6 +22,7 @@ pub fn run() {
             commands::trigger_sync,
             commands::open_dashboard,
             commands::dismiss_tray,
+            commands::resize_tray,
             commands::quit_app,
             commands::get_preferences,
             commands::update_preferences,

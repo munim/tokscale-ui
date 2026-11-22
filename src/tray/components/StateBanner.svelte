@@ -1,39 +1,15 @@
 <script lang="ts">
-  import type { SourceWarning, SyncProgressEvent } from '$lib/contracts/ipc';
+  import type { SourceWarning } from '$lib/contracts/ipc';
 
   interface Props {
-    syncing: boolean;
-    syncProgress: SyncProgressEvent | null;
     partial: boolean;
     warnings: SourceWarning[];
     error?: string | null;
     onretry: () => void;
   }
 
-  let { syncing, syncProgress, partial, warnings, error = null, onretry }: Props = $props();
-
-  let progressPercent = $derived.by(() => {
-    if (!syncProgress || syncProgress.totalSources <= 0) {
-      return null;
-    }
-    return Math.max(8, Math.min(100, Math.round((syncProgress.completedSources / syncProgress.totalSources) * 100)));
-  });
-
-  let syncMessage = $derived(syncProgress?.message?.trim() || 'Syncing sources…');
+  let { partial, warnings, error = null, onretry }: Props = $props();
 </script>
-
-{#if syncing}
-  <div class="tray-sync-bar" role="status" aria-live="polite">
-    <div class="tray-sync-line" aria-hidden="true">
-      <div
-        class="tray-sync-fill"
-        class:is-indeterminate={progressPercent === null}
-        style:width={progressPercent !== null ? `${progressPercent}%` : undefined}
-      ></div>
-    </div>
-    <span class="tray-sync-copy">{syncMessage}</span>
-  </div>
-{/if}
 
 {#if error}
   <div class="tray-banner" data-tone="danger" role="alert">
@@ -62,41 +38,6 @@
 {/if}
 
 <style>
-  .tray-sync-bar {
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-    flex-shrink: 0;
-  }
-
-  .tray-sync-line {
-    width: 100%;
-    height: 2px;
-    border-radius: 999px;
-    background: var(--fg-soft);
-    overflow: hidden;
-  }
-
-  .tray-sync-fill {
-    height: 100%;
-    border-radius: 999px;
-    background: var(--accent);
-    transition: width 160ms ease;
-  }
-
-  .tray-sync-fill.is-indeterminate {
-    width: 40%;
-    animation: tray-progress-slide 1.1s ease-in-out infinite;
-  }
-
-  .tray-sync-copy {
-    font-size: 11px;
-    color: var(--muted);
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-
   .tray-banner {
     display: flex;
     align-items: flex-start;
@@ -156,21 +97,5 @@
     color: currentColor;
     text-decoration: underline;
     cursor: pointer;
-  }
-
-  @keyframes tray-progress-slide {
-    0% {
-      transform: translateX(-100%);
-    }
-    100% {
-      transform: translateX(260%);
-    }
-  }
-
-  @media (prefers-reduced-motion: reduce) {
-    .tray-sync-fill.is-indeterminate {
-      animation: none;
-      width: 60%;
-    }
   }
 </style>

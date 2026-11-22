@@ -235,13 +235,15 @@
     align-items: center;
     justify-content: space-between;
     gap: 12px;
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
   }
 
   .heatmap-heading {
     display: flex;
     flex-direction: column;
     gap: 3px;
+    flex: 1 1 auto;
+    min-width: 0;
   }
 
   .heatmap-title {
@@ -255,9 +257,14 @@
     display: flex;
     align-items: center;
     gap: 6px;
+    height: 18px;
     min-height: 18px;
+    max-height: 18px;
+    line-height: 1.2;
     font-size: 12px;
     color: var(--fg);
+    white-space: nowrap;
+    overflow: hidden;
   }
 
   .readout-hint {

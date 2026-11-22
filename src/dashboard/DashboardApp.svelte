@@ -73,6 +73,7 @@
     onGroupByChange={(groupBy) => router.setGroupBy(groupBy)}
     onSortChange={(sort) => router.setSort(sort)}
     onToggleClient={(clientId) => router.toggleClient(clientId)}
+    onClearClients={() => router.clearClients()}
   />
 
   {#if router.snapshot}

@@ -83,9 +83,20 @@
   }
 
   .tray-chart-section :global(.ui-chart-readout) {
+    height: 16px;
     min-height: 16px;
+    max-height: 16px;
+    gap: 6px;
     font-size: 11px;
     line-height: 1.2;
+  }
+
+  .tray-chart-section :global(.ui-chart-readout-segs) {
+    gap: 6px;
+  }
+
+  .tray-chart-section :global(.ui-chart-readout-seg) {
+    gap: 3px;
   }
 
   .tray-chart-section :global(.ui-chart-axis) {

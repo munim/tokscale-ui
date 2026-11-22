@@ -139,6 +139,13 @@
     background: var(--fg-soft);
   }
 
+  .tray-icon-btn:focus-visible {
+    outline: none;
+    border-color: color-mix(in oklch, var(--accent) 52%, var(--border));
+    box-shadow: 0 0 0 2px color-mix(in oklch, var(--accent) 18%, transparent);
+    color: var(--fg);
+  }
+
   .tray-icon-btn.is-active {
     background: var(--accent-soft);
     color: var(--accent-strong);
@@ -147,10 +154,12 @@
 
   .tray-icon-btn.is-syncing {
     color: var(--accent-strong);
+    background: color-mix(in oklch, var(--accent) 10%, var(--surface));
+    border-color: color-mix(in oklch, var(--accent) 36%, var(--border));
   }
 
   .tray-icon-btn.is-syncing .tray-sync-icon {
-    animation: tray-spin 1s linear infinite;
+    animation: tray-spin 0.95s linear infinite;
   }
 
   @keyframes tray-spin {

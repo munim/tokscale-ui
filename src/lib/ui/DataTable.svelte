@@ -340,6 +340,10 @@
     white-space: nowrap;
   }
 
+  .ui-table-row td.is-end {
+    text-align: end;
+  }
+
   .ui-table-row.is-clickable {
     cursor: pointer;
     transition: background-color 100ms ease;
@@ -389,5 +393,19 @@
     font-weight: 600;
     padding: 0 10px;
     height: var(--ui-table-row-h, 32px);
+    text-align: start;
+    vertical-align: middle;
+    white-space: nowrap;
+    color: var(--fg);
+  }
+
+  .ui-table-foot :global(tr td.is-end) {
+    text-align: end;
+  }
+
+  .ui-table-foot :global(tr td.ui-table-num) {
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+    text-align: end;
   }
 </style>
