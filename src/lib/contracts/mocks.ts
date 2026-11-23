@@ -1108,3 +1108,165 @@ export function mockCliInfo(): CliResolutionInfo {
     version: '4.23.0',
   };
 }
+
+export function mockTokscaleSettings(): import('./ipc').TokscaleSettingsState {
+  return {
+    path: '/Users/dev/.config/tokscale/settings.json',
+    exists: true,
+    configDir: '/Users/dev/.config/tokscale',
+    appPreferencesPath: '/Users/dev/Library/Application Support/io.github.munim.tokscale-ui/preferences.json',
+    bucketTimezone: 'Europe/Berlin',
+    defaultClients: [],
+    extraScanPaths: {
+      codex: ['/Users/dev/work/monorepo/.codex'],
+    },
+    opencodeDbPaths: [],
+    localMachineLabel: 'macbook-pro',
+    includeUnusedModels: false,
+    modelAliases: {
+      'big-pickle': 'claude-opus-4-6',
+    },
+    nativeTimeoutMs: 300_000,
+    lightWriteCache: false,
+    autoRefreshEnabled: true,
+    autoRefreshMs: 30_000,
+    minutelyTabEnabled: false,
+    colorPalette: 'dusk',
+    tuiLanguage: 'en',
+  };
+}
+
+export function mockCustomPricing(): import('./ipc').CustomPricingState {
+  return {
+    path: '/Users/dev/.config/tokscale/custom-pricing.json',
+    exists: true,
+    valid: true,
+    validationMessage: 'Validated by tokscale CLI',
+    entries: [
+      {
+        scope: 'provider',
+        providerId: 'fireworks',
+        modelId: 'accounts/fireworks/routers/kimi-k2p6-turbo',
+        inputPerMillion: 2.0,
+        outputPerMillion: 8.0,
+        cacheReadPerMillion: 0.3,
+      },
+      {
+        scope: 'model',
+        modelId: 'local/qwen-coder-32b',
+        inputPerMillion: 0,
+        outputPerMillion: 0,
+        cacheReadPerMillion: 0,
+        cacheWritePerMillion: 0,
+        notes: 'Local inference',
+      },
+    ],
+  };
+}
+
+export function mockProvidersStatus(): import('./ipc').ProvidersStatusPayload {
+  return {
+    providers: [
+      {
+        id: 'cursor',
+        label: 'Cursor',
+        connected: true,
+        supportsMultiAccount: true,
+        summary: '2 saved · active: work',
+        lastSyncedAt: '2026-11-22T09:50:00Z',
+        accounts: [
+          { name: 'work', active: true, email: 'work@tokscale.local', plan: 'Pro' },
+          { name: 'personal', active: false, email: 'me@tokscale.local', plan: 'Pro' },
+        ],
+        diagnostics: [],
+        variants: [],
+      },
+      {
+        id: 'codex',
+        label: 'Codex',
+        connected: true,
+        supportsMultiAccount: true,
+        summary: '1 saved · active: default',
+        accounts: [{ name: 'default', active: true, plan: 'Plus' }],
+        diagnostics: [],
+        variants: [],
+      },
+      {
+        id: 'trae',
+        label: 'Trae IDE',
+        connected: false,
+        supportsMultiAccount: false,
+        summary: 'Not connected',
+        accounts: [],
+        diagnostics: [],
+        variants: [],
+      },
+      {
+        id: 'warp',
+        label: 'Warp / Oz',
+        connected: false,
+        supportsMultiAccount: false,
+        summary: 'Not connected',
+        accounts: [],
+        diagnostics: ['missing credentials; run `tokscale warp login`'],
+        variants: [],
+      },
+      {
+        id: 'capy',
+        label: 'Capy',
+        connected: false,
+        supportsMultiAccount: false,
+        summary: 'Not connected',
+        accounts: [],
+        diagnostics: ['missing API key; run `tokscale capy login`'],
+        variants: [],
+      },
+      {
+        id: 'antigravity',
+        label: 'Antigravity',
+        connected: false,
+        supportsMultiAccount: false,
+        summary: 'No running language servers detected',
+        accounts: [],
+        diagnostics: [],
+        variants: [],
+      },
+      {
+        id: 'amp',
+        label: 'Amp',
+        connected: false,
+        supportsMultiAccount: false,
+        summary: 'Exports threads via local amp CLI',
+        accounts: [],
+        diagnostics: [],
+        variants: [],
+      },
+      {
+        id: 'hindsight',
+        label: 'Hindsight',
+        connected: false,
+        supportsMultiAccount: false,
+        summary: 'Syncs LLM request logs from Hindsight API',
+        accounts: [],
+        diagnostics: [],
+        variants: [],
+      },
+    ],
+  };
+}
+
+export function mockSocialStatus(): import('./ipc').SocialStatusPayload {
+  return {
+    loggedIn: false,
+    detail: 'Not logged in',
+    autosubmit: {
+      enabled: false,
+      intervalMinutes: 1440,
+      clients: [],
+      today: false,
+      yesterday: false,
+      week: false,
+      month: false,
+    },
+  };
+}

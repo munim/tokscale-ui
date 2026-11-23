@@ -14,9 +14,12 @@ describe('frozen contracts and deterministic mocks', () => {
     expect(COMMANDS.getTraySnapshot).toBe('get_tray_snapshot');
     expect(COMMANDS.getDashboardSnapshot).toBe('get_dashboard_snapshot');
     expect(COMMANDS.resizeTray).toBe('resize_tray');
+    expect(COMMANDS.openSettings).toBe('open_settings');
+    expect(COMMANDS.getTokscaleSettings).toBe('get_tokscale_settings');
     expect(COMMANDS.exportJson).toBe('export_json');
     expect(EVENTS.snapshotUpdated).toBe('tokscale://snapshot-updated');
     expect(EVENTS.dashboardNavigate).toBe('tokscale://dashboard-navigate');
+    expect(EVENTS.settingsNavigate).toBe('tokscale://settings-navigate');
   });
 
   it('produces deterministic mock snapshots across repeated calls', () => {

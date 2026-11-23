@@ -18,14 +18,23 @@ pub enum OpenAction {
     WarmEmit(DashboardHandoff),
 }
 
-pub fn apply_startup_dock_policy(app: &AppHandle<Wry>, state: &Arc<RwLock<ShellState>>) {
+pub fn apply_dock_policy(app: &AppHandle<Wry>, policy: DockPolicy) {
     #[cfg(target_os = "macos")]
     {
-        let _ = app.set_activation_policy(tauri::ActivationPolicy::Accessory);
+        let native_policy = match policy {
+            DockPolicy::Accessory => tauri::ActivationPolicy::Accessory,
+            DockPolicy::Regular => tauri::ActivationPolicy::Regular,
+        };
+        let _ = app.set_activation_policy(native_policy);
     }
     #[cfg(not(target_os = "macos"))]
-    let _ = app;
+    {
+        let _ = (app, policy);
+    }
+}
 
+pub fn apply_startup_dock_policy(app: &AppHandle<Wry>, state: &Arc<RwLock<ShellState>>) {
+    apply_dock_policy(app, DockPolicy::Accessory);
     write_state(state).dock_policy = DockPolicy::Accessory;
 }
 
@@ -45,11 +54,17 @@ pub fn plan_dashboard_open(
     }
 }
 
-pub fn record_dashboard_close(state: &Arc<RwLock<ShellState>>) {
+pub fn record_dashboard_close(state: &Arc<RwLock<ShellState>>) -> DockPolicy {
     let mut guard = write_state(state);
     guard.dashboard_open = false;
-    guard.dock_policy = DockPolicy::Accessory;
     guard.pending_handoff = None;
+    let next_policy = if guard.settings_open {
+        DockPolicy::Regular
+    } else {
+        DockPolicy::Accessory
+    };
+    guard.dock_policy = next_policy;
+    next_policy
 }
 
 pub fn take_pending_handoff(state: &Arc<RwLock<ShellState>>) -> Option<DashboardHandoff> {
@@ -108,25 +123,18 @@ pub fn open_dashboard(
     let window = match builder.build() {
         Ok(win) => win,
         Err(err) => {
-            record_dashboard_close(state);
-            #[cfg(target_os = "macos")]
-            {
-                let _ = app.set_activation_policy(tauri::ActivationPolicy::Accessory);
-            }
+            let next_policy = record_dashboard_close(state);
+            apply_dock_policy(app, next_policy);
             return Err(err);
         }
     };
 
     let event_state = Arc::clone(state);
-    #[cfg(target_os = "macos")]
     let app_handle = app.clone();
     window.on_window_event(move |event| match event {
         WindowEvent::CloseRequested { .. } | WindowEvent::Destroyed => {
-            record_dashboard_close(&event_state);
-            #[cfg(target_os = "macos")]
-            {
-                let _ = app_handle.set_activation_policy(tauri::ActivationPolicy::Accessory);
-            }
+            let next_policy = record_dashboard_close(&event_state);
+            apply_dock_policy(&app_handle, next_policy);
         }
         _ => {}
     });

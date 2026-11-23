@@ -1,8 +1,8 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Default capability for Tokscale UI tray and dashboard windows",
-  "windows": ["tray", "dashboard"],
+  "description": "Default capability for Tokscale UI tray, dashboard, and settings windows",
+  "windows": ["tray", "dashboard", "settings"],
   "permissions": [
     "core:default",
     "core:window:allow-start-dragging",

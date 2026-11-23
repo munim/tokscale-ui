@@ -2,10 +2,14 @@ import { invoke } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import {
   mockCliInfo,
+  mockCustomPricing,
   mockDashboardSnapshot,
   mockPreferences,
+  mockProvidersStatus,
   mockSessionDetail,
   mockSessionsPayload,
+  mockSocialStatus,
+  mockTokscaleSettings,
   mockTraySnapshot,
 } from './mocks';
 
@@ -92,6 +96,168 @@ export interface SessionTitlesUpdatedEvent {
   updatedCount: number;
 }
 
+export type SettingsSection = 'app' | 'sources' | 'providers' | 'pricing' | 'social' | 'cli';
+
+export interface SettingsNavigateEvent {
+  section: SettingsSection;
+}
+
+export interface TokscaleSettingsState {
+  path: string;
+  exists: boolean;
+  configDir: string;
+  appPreferencesPath?: string;
+  bucketTimezone?: string;
+  defaultClients: string[];
+  extraScanPaths: Record<string, string[]>;
+  opencodeDbPaths: string[];
+  localMachineLabel?: string;
+  includeUnusedModels: boolean;
+  modelAliases: Record<string, string>;
+  nativeTimeoutMs: number;
+  lightWriteCache: boolean;
+  autoRefreshEnabled: boolean;
+  autoRefreshMs: number;
+  minutelyTabEnabled: boolean;
+  colorPalette: string;
+  tuiLanguage: string;
+}
+
+export interface TokscaleSettingsPatch {
+  defaultClients?: string[];
+  extraScanPaths?: Record<string, string[]>;
+  opencodeDbPaths?: string[];
+  localMachineLabel?: string | null;
+  includeUnusedModels?: boolean;
+  modelAliases?: Record<string, string>;
+  nativeTimeoutMs?: number;
+  lightWriteCache?: boolean;
+  autoRefreshEnabled?: boolean;
+  autoRefreshMs?: number;
+  minutelyTabEnabled?: boolean;
+  colorPalette?: string;
+  tuiLanguage?: string;
+}
+
+export interface CustomPricingEntry {
+  scope: 'model' | 'provider';
+  providerId?: string;
+  modelId: string;
+  inputPerMillion?: number;
+  outputPerMillion?: number;
+  cacheReadPerMillion?: number;
+  cacheWritePerMillion?: number;
+  notes?: string;
+  source?: string;
+}
+
+export interface CustomPricingState {
+  path: string;
+  exists: boolean;
+  entries: CustomPricingEntry[];
+  valid: boolean;
+  validationMessage?: string;
+}
+
+export interface ModelPriceLookupResult {
+  modelId: string;
+  matchedKey?: string;
+  source?: string;
+  scope?: string;
+  inputPerMillion?: number;
+  outputPerMillion?: number;
+  cacheReadPerMillion?: number;
+  cacheWritePerMillion?: number;
+  submissionSafe?: boolean;
+}
+
+export interface ProviderAccountInfo {
+  name: string;
+  active: boolean;
+  email?: string;
+  plan?: string;
+}
+
+export interface ProviderStatusItem {
+  id: string;
+  label: string;
+  connected: boolean;
+  supportsMultiAccount: boolean;
+  summary: string;
+  lastSyncedAt?: string;
+  accounts: ProviderAccountInfo[];
+  diagnostics: string[];
+  variants: string[];
+}
+
+export interface ProvidersStatusPayload {
+  providers: ProviderStatusItem[];
+}
+
+export interface ProviderActionRequest {
+  provider: string;
+  action: string;
+  accountName?: string;
+  token?: string;
+  apiKey?: string;
+  isCookie?: boolean;
+  variant?: string;
+  purgeCache?: boolean;
+  allAccounts?: boolean;
+  users?: string[];
+  apiUrl?: string;
+  tenant?: string;
+}
+
+export interface CliActionResult {
+  ok: boolean;
+  message: string;
+  output?: string;
+}
+
+export interface AutosubmitStatus {
+  enabled: boolean;
+  intervalMinutes: number;
+  scheduler?: string;
+  clients: string[];
+  today: boolean;
+  yesterday: boolean;
+  week: boolean;
+  month: boolean;
+  since?: string;
+  until?: string;
+  year?: string;
+  lastRunAtMs?: number;
+  lastError?: string;
+}
+
+export interface SocialStatusPayload {
+  loggedIn: boolean;
+  username?: string;
+  detail?: string;
+  autosubmit: AutosubmitStatus;
+}
+
+export interface SocialActionRequest {
+  action: 'login_browser' | 'login_token' | 'logout' | 'submit_dry_run' | 'submit' | 'autosubmit_run';
+  token?: string;
+  clients?: string[];
+  range?: string;
+}
+
+export interface AutosubmitConfigRequest {
+  enabled: boolean;
+  interval?: string;
+  clients?: string[];
+  range?: string;
+}
+
+export interface DashboardSources {
+  headlessRoots: string[];
+  note: string;
+  clients: SourceHealthRow[];
+}
+
 export const COMMANDS = {
   getTraySnapshot: 'get_tray_snapshot',
   getDashboardSnapshot: 'get_dashboard_snapshot',
@@ -99,6 +265,8 @@ export const COMMANDS = {
   getSessionDetail: 'get_session_detail',
   triggerSync: 'trigger_sync',
   openDashboard: 'open_dashboard',
+  openSettings: 'open_settings',
+  takePendingSettingsSection: 'take_pending_settings_section',
   dismissTray: 'dismiss_tray',
   resizeTray: 'resize_tray',
   quitApp: 'quit_app',
@@ -107,6 +275,21 @@ export const COMMANDS = {
   getCliInfo: 'get_cli_info',
   installOrUpgradeCli: 'install_or_upgrade_cli',
   exportJson: 'export_json',
+  getSourcesHealth: 'get_sources_health',
+  getTokscaleSettings: 'get_tokscale_settings',
+  updateTokscaleSettings: 'update_tokscale_settings',
+  recoverTokscaleTimezone: 'recover_tokscale_timezone',
+  getCustomPricing: 'get_custom_pricing',
+  saveCustomPricing: 'save_custom_pricing',
+  lookupModelPricing: 'lookup_model_pricing',
+  refreshPricingCatalog: 'refresh_pricing_catalog',
+  getProvidersStatus: 'get_providers_status',
+  runProviderAction: 'run_provider_action',
+  getSocialStatus: 'get_social_status',
+  runSocialAction: 'run_social_action',
+  configureAutosubmit: 'configure_autosubmit',
+  revealConfigPath: 'reveal_config_path',
+  pickPath: 'pick_path',
 } as const;
 
 export const EVENTS = {
@@ -115,6 +298,7 @@ export const EVENTS = {
   dashboardNavigate: 'tokscale://dashboard-navigate',
   sessionTitlesUpdated: 'tokscale://session-titles-updated',
   preferencesUpdated: 'tokscale://preferences-updated',
+  settingsNavigate: 'tokscale://settings-navigate',
 } as const;
 
 export interface HarnessSeriesItem {
@@ -323,12 +507,44 @@ export function isMockMode(): boolean {
 }
 
 let mockPrefsState: CompanionPreferences | null = null;
+let mockTokscaleSettingsState: TokscaleSettingsState | null = null;
+let mockCustomPricingState: CustomPricingState | null = null;
+let mockProvidersState: ProvidersStatusPayload | null = null;
+let mockSocialState: SocialStatusPayload | null = null;
 
 function getMockPreferencesState(): CompanionPreferences {
   if (!mockPrefsState) {
     mockPrefsState = mockPreferences();
   }
   return mockPrefsState;
+}
+
+function getMockTokscaleSettingsState(): TokscaleSettingsState {
+  if (!mockTokscaleSettingsState) {
+    mockTokscaleSettingsState = mockTokscaleSettings();
+  }
+  return mockTokscaleSettingsState;
+}
+
+function getMockCustomPricingState(): CustomPricingState {
+  if (!mockCustomPricingState) {
+    mockCustomPricingState = mockCustomPricing();
+  }
+  return mockCustomPricingState;
+}
+
+function getMockProvidersState(): ProvidersStatusPayload {
+  if (!mockProvidersState) {
+    mockProvidersState = mockProvidersStatus();
+  }
+  return mockProvidersState;
+}
+
+function getMockSocialState(): SocialStatusPayload {
+  if (!mockSocialState) {
+    mockSocialState = mockSocialStatus();
+  }
+  return mockSocialState;
 }
 
 export const ipc = {
@@ -379,6 +595,20 @@ export const ipc = {
       return;
     }
     await invoke<void>(COMMANDS.openDashboard, { handoff });
+  },
+
+  async openSettings(section?: SettingsSection): Promise<void> {
+    if (isMockMode()) {
+      return;
+    }
+    await invoke<void>(COMMANDS.openSettings, section ? { section } : {});
+  },
+
+  async takePendingSettingsSection(): Promise<SettingsSection | null> {
+    if (isMockMode()) {
+      return null;
+    }
+    return invoke<SettingsSection | null>(COMMANDS.takePendingSettingsSection);
   },
 
   async dismissTray(): Promise<void> {
@@ -437,6 +667,201 @@ export const ipc = {
     }
     return invoke<string>(COMMANDS.exportJson, { query });
   },
+
+  async getSourcesHealth(): Promise<DashboardSources> {
+    if (isMockMode()) {
+      return mockDashboardSnapshot().sources;
+    }
+    return invoke<DashboardSources>(COMMANDS.getSourcesHealth);
+  },
+
+  async getTokscaleSettings(): Promise<TokscaleSettingsState> {
+    if (isMockMode()) {
+      return structuredClone(getMockTokscaleSettingsState());
+    }
+    return invoke<TokscaleSettingsState>(COMMANDS.getTokscaleSettings);
+  },
+
+  async updateTokscaleSettings(patch: TokscaleSettingsPatch): Promise<TokscaleSettingsState> {
+    if (isMockMode()) {
+      const current = getMockTokscaleSettingsState();
+      const next: TokscaleSettingsState = {
+        ...current,
+        ...(patch.defaultClients !== undefined ? { defaultClients: [...patch.defaultClients] } : {}),
+        ...(patch.extraScanPaths !== undefined ? { extraScanPaths: structuredClone(patch.extraScanPaths) } : {}),
+        ...(patch.opencodeDbPaths !== undefined ? { opencodeDbPaths: [...patch.opencodeDbPaths] } : {}),
+        ...(patch.localMachineLabel !== undefined
+          ? { localMachineLabel: patch.localMachineLabel ?? undefined }
+          : {}),
+        ...(patch.includeUnusedModels !== undefined ? { includeUnusedModels: patch.includeUnusedModels } : {}),
+        ...(patch.modelAliases !== undefined ? { modelAliases: { ...patch.modelAliases } } : {}),
+        ...(patch.nativeTimeoutMs !== undefined ? { nativeTimeoutMs: patch.nativeTimeoutMs } : {}),
+        ...(patch.lightWriteCache !== undefined ? { lightWriteCache: patch.lightWriteCache } : {}),
+        ...(patch.autoRefreshEnabled !== undefined ? { autoRefreshEnabled: patch.autoRefreshEnabled } : {}),
+        ...(patch.autoRefreshMs !== undefined ? { autoRefreshMs: patch.autoRefreshMs } : {}),
+        ...(patch.minutelyTabEnabled !== undefined ? { minutelyTabEnabled: patch.minutelyTabEnabled } : {}),
+        ...(patch.colorPalette !== undefined ? { colorPalette: patch.colorPalette } : {}),
+        ...(patch.tuiLanguage !== undefined ? { tuiLanguage: patch.tuiLanguage } : {}),
+      };
+      mockTokscaleSettingsState = next;
+      return structuredClone(next);
+    }
+    return invoke<TokscaleSettingsState>(COMMANDS.updateTokscaleSettings, { patch });
+  },
+
+  async recoverTokscaleTimezone(): Promise<CliActionResult> {
+    if (isMockMode()) {
+      return { ok: true, message: 'Timezone verified: Europe/Berlin (mock)' };
+    }
+    return invoke<CliActionResult>(COMMANDS.recoverTokscaleTimezone);
+  },
+
+  async getCustomPricing(): Promise<CustomPricingState> {
+    if (isMockMode()) {
+      return structuredClone(getMockCustomPricingState());
+    }
+    return invoke<CustomPricingState>(COMMANDS.getCustomPricing);
+  },
+
+  async saveCustomPricing(entries: CustomPricingEntry[]): Promise<CustomPricingState> {
+    if (isMockMode()) {
+      mockCustomPricingState = {
+        ...getMockCustomPricingState(),
+        exists: true,
+        entries: structuredClone(entries),
+        valid: true,
+        validationMessage: 'Validated by tokscale CLI (mock)',
+      };
+      return structuredClone(mockCustomPricingState);
+    }
+    return invoke<CustomPricingState>(COMMANDS.saveCustomPricing, { entries });
+  },
+
+  async lookupModelPricing(modelId: string): Promise<ModelPriceLookupResult> {
+    if (isMockMode()) {
+      return {
+        modelId,
+        matchedKey: modelId,
+        source: 'LiteLLM',
+        scope: 'upstream',
+        inputPerMillion: 3.0,
+        outputPerMillion: 15.0,
+        cacheReadPerMillion: 0.3,
+        cacheWritePerMillion: 3.75,
+        submissionSafe: true,
+      };
+    }
+    return invoke<ModelPriceLookupResult>(COMMANDS.lookupModelPricing, { modelId });
+  },
+
+  async refreshPricingCatalog(): Promise<CliActionResult> {
+    if (isMockMode()) {
+      return { ok: true, message: 'Pricing catalogs refreshed (mock)' };
+    }
+    return invoke<CliActionResult>(COMMANDS.refreshPricingCatalog);
+  },
+
+  async getProvidersStatus(): Promise<ProvidersStatusPayload> {
+    if (isMockMode()) {
+      return structuredClone(getMockProvidersState());
+    }
+    return invoke<ProvidersStatusPayload>(COMMANDS.getProvidersStatus);
+  },
+
+  async runProviderAction(request: ProviderActionRequest): Promise<CliActionResult> {
+    if (isMockMode()) {
+      return {
+        ok: true,
+        message: `${request.provider} ${request.action} completed (mock)`,
+      };
+    }
+    return invoke<CliActionResult>(COMMANDS.runProviderAction, { request });
+  },
+
+  async getSocialStatus(): Promise<SocialStatusPayload> {
+    if (isMockMode()) {
+      return structuredClone(getMockSocialState());
+    }
+    return invoke<SocialStatusPayload>(COMMANDS.getSocialStatus);
+  },
+
+  async runSocialAction(request: SocialActionRequest): Promise<CliActionResult> {
+    if (isMockMode()) {
+      if (request.action === 'submit_dry_run') {
+        return {
+          ok: true,
+          message: 'Dry run ready: 142,800 tokens across 3 clients ($4.12)',
+          output: 'Dry run summary\n  Days: 7\n  Clients: claude, codex, opencode\n  Estimated spend: $4.12\n  Excluded unpriced messages: 0',
+        };
+      }
+      if (request.action === 'login_token' || request.action === 'login_browser') {
+        mockSocialState = {
+          ...getMockSocialState(),
+          loggedIn: true,
+          username: 'devuser',
+          detail: 'Logged in as @devuser',
+        };
+      } else if (request.action === 'logout') {
+        mockSocialState = {
+          ...getMockSocialState(),
+          loggedIn: false,
+          username: undefined,
+          detail: 'Not logged in',
+        };
+      }
+      return {
+        ok: true,
+        message: `${request.action.replace(/_/g, ' ')} succeeded (mock)`,
+      };
+    }
+    return invoke<CliActionResult>(COMMANDS.runSocialAction, { request });
+  },
+
+  async configureAutosubmit(request: AutosubmitConfigRequest): Promise<CliActionResult> {
+    if (isMockMode()) {
+      const current = getMockSocialState();
+      const minutes =
+        request.interval === '30m'
+          ? 30
+          : request.interval === '1h'
+            ? 60
+            : request.interval === '6h'
+              ? 360
+              : 1440;
+      mockSocialState = {
+        ...current,
+        autosubmit: {
+          ...current.autosubmit,
+          enabled: request.enabled,
+          intervalMinutes: minutes,
+          scheduler: request.enabled ? 'launchd' : undefined,
+          clients: request.clients ?? [],
+          today: request.range === 'today',
+          week: request.range === 'week',
+          month: request.range === 'month',
+        },
+      };
+      return {
+        ok: true,
+        message: request.enabled ? 'Autosubmit enabled (mock)' : 'Autosubmit disabled (mock)',
+      };
+    }
+    return invoke<CliActionResult>(COMMANDS.configureAutosubmit, { request });
+  },
+
+  async revealConfigPath(path: string): Promise<void> {
+    if (isMockMode()) {
+      return;
+    }
+    await invoke<void>(COMMANDS.revealConfigPath, { path });
+  },
+
+  async pickPath(kind: 'file' | 'folder'): Promise<string | null> {
+    if (isMockMode()) {
+      return kind === 'folder' ? '/Users/dev/projects/.codex' : '/Users/dev/.bun/bin/tokscale';
+    }
+    return invoke<string | null>(COMMANDS.pickPath, { kind });
+  },
 };
 
 export async function onEvent<T>(eventName: string, handler: (payload: T) => void): Promise<UnlistenFn> {
@@ -470,4 +895,10 @@ export function onPreferencesUpdated(
   handler: (payload: CompanionPreferences) => void,
 ): Promise<UnlistenFn> {
   return onEvent<CompanionPreferences>(EVENTS.preferencesUpdated, handler);
+}
+
+export function onSettingsNavigate(
+  handler: (payload: SettingsNavigateEvent) => void,
+): Promise<UnlistenFn> {
+  return onEvent<SettingsNavigateEvent>(EVENTS.settingsNavigate, handler);
 }

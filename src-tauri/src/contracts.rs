@@ -1,3 +1,5 @@
+use std::collections::BTreeMap;
+
 use serde::{Deserialize, Serialize};
 
 pub mod events {
@@ -6,6 +8,7 @@ pub mod events {
     pub const DASHBOARD_NAVIGATE: &str = "tokscale://dashboard-navigate";
     pub const SESSION_TITLES_UPDATED: &str = "tokscale://session-titles-updated";
     pub const PREFERENCES_UPDATED: &str = "tokscale://preferences-updated";
+    pub const SETTINGS_NAVIGATE: &str = "tokscale://settings-navigate";
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
@@ -512,6 +515,262 @@ pub struct SessionDetail {
     pub total_tokens: TokenCounts,
     pub total_cost: f64,
     pub models: Vec<SessionModelBreakdown>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[serde(rename_all = "camelCase")]
+pub enum SettingsSection {
+    #[default]
+    App,
+    Sources,
+    Providers,
+    Pricing,
+    Social,
+    Cli,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct SettingsNavigateEvent {
+    pub section: SettingsSection,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct TokscaleSettingsState {
+    pub path: String,
+    pub exists: bool,
+    pub config_dir: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub app_preferences_path: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bucket_timezone: Option<String>,
+    pub default_clients: Vec<String>,
+    pub extra_scan_paths: BTreeMap<String, Vec<String>>,
+    pub opencode_db_paths: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub local_machine_label: Option<String>,
+    pub include_unused_models: bool,
+    pub model_aliases: BTreeMap<String, String>,
+    pub native_timeout_ms: u64,
+    pub light_write_cache: bool,
+    pub auto_refresh_enabled: bool,
+    pub auto_refresh_ms: u64,
+    pub minutely_tab_enabled: bool,
+    pub color_palette: String,
+    pub tui_language: String,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, Default, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct TokscaleSettingsPatch {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub default_clients: Option<Vec<String>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub extra_scan_paths: Option<BTreeMap<String, Vec<String>>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub opencode_db_paths: Option<Vec<String>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub local_machine_label: Option<Option<String>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub include_unused_models: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model_aliases: Option<BTreeMap<String, String>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub native_timeout_ms: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub light_write_cache: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub auto_refresh_enabled: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub auto_refresh_ms: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub minutely_tab_enabled: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub color_palette: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tui_language: Option<String>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct CustomPricingEntry {
+    pub scope: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub provider_id: Option<String>,
+    pub model_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub input_per_million: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub output_per_million: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cache_read_per_million: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cache_write_per_million: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub notes: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source: Option<String>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct CustomPricingState {
+    pub path: String,
+    pub exists: bool,
+    pub entries: Vec<CustomPricingEntry>,
+    pub valid: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub validation_message: Option<String>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ModelPriceLookupResult {
+    pub model_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub matched_key: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub scope: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub input_per_million: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub output_per_million: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cache_read_per_million: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cache_write_per_million: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub submission_safe: Option<bool>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ProviderAccountInfo {
+    pub name: String,
+    pub active: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub email: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub plan: Option<String>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ProviderStatusItem {
+    pub id: String,
+    pub label: String,
+    pub connected: bool,
+    pub supports_multi_account: bool,
+    pub summary: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_synced_at: Option<String>,
+    pub accounts: Vec<ProviderAccountInfo>,
+    pub diagnostics: Vec<String>,
+    pub variants: Vec<String>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ProvidersStatusPayload {
+    pub providers: Vec<ProviderStatusItem>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, Default, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ProviderActionRequest {
+    pub provider: String,
+    pub action: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub account_name: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub token: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub api_key: Option<String>,
+    #[serde(default)]
+    pub is_cookie: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub variant: Option<String>,
+    #[serde(default)]
+    pub purge_cache: bool,
+    #[serde(default)]
+    pub all_accounts: bool,
+    #[serde(default)]
+    pub users: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub api_url: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tenant: Option<String>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct CliActionResult {
+    pub ok: bool,
+    pub message: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub output: Option<String>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, Default, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct AutosubmitStatus {
+    pub enabled: bool,
+    pub interval_minutes: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub scheduler: Option<String>,
+    pub clients: Vec<String>,
+    pub today: bool,
+    pub yesterday: bool,
+    pub week: bool,
+    pub month: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub since: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub until: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub year: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_run_at_ms: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_error: Option<String>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct SocialStatusPayload {
+    pub logged_in: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub username: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub detail: Option<String>,
+    pub autosubmit: AutosubmitStatus,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, Default, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct SocialActionRequest {
+    pub action: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub token: Option<String>,
+    #[serde(default)]
+    pub clients: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub range: Option<String>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, Default, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct AutosubmitConfigRequest {
+    pub enabled: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub interval: Option<String>,
+    #[serde(default)]
+    pub clients: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub range: Option<String>,
 }
 
 #[cfg(test)]

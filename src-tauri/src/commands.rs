@@ -4,12 +4,15 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use tauri::{AppHandle, Emitter, Manager, State, Wry};
 
-use crate::cli::{commands as cli_commands, CliService, ProbeEnv, PROVIDER_SYNC};
+use crate::cli::{commands as cli_commands, config as cli_config, CliService, ProbeEnv, PROVIDER_SYNC};
 use crate::contracts::{
-    events, CliInstallResult, CliResolutionInfo, CompanionPreferences, DashboardNavigateEvent,
-    DashboardQuery, DashboardSnapshot, RangePreset, SessionDetail, SessionTitlesUpdatedEvent,
-    SessionsPayload, SessionsQuery, SnapshotEvent, SourceWarning, SyncMode, SyncProgressEvent,
-    SyncStatus, TraySnapshot,
+    events, AutosubmitConfigRequest, CliActionResult, CliInstallResult, CliResolutionInfo,
+    CompanionPreferences, CustomPricingEntry, CustomPricingState, DashboardNavigateEvent,
+    DashboardQuery, DashboardSnapshot, DashboardSources, ModelPriceLookupResult,
+    ProviderActionRequest, ProvidersStatusPayload, RangePreset, SessionDetail,
+    SessionTitlesUpdatedEvent, SessionsPayload, SessionsQuery, SettingsSection, SnapshotEvent,
+    SocialActionRequest, SocialStatusPayload, SourceWarning, SyncMode, SyncProgressEvent,
+    SyncStatus, TokscaleSettingsPatch, TokscaleSettingsState, TraySnapshot,
 };
 use crate::data::source::CliRunner;
 use crate::data::DataService;
@@ -841,6 +844,47 @@ pub async fn open_dashboard(
 }
 
 #[tauri::command]
+pub async fn open_settings(
+    state: State<'_, AppState>,
+    section: Option<SettingsSection>,
+) -> Result<(), String> {
+    let target_section = section.unwrap_or(SettingsSection::App);
+    let controller = state
+        .shell
+        .read()
+        .unwrap_or_else(|e| e.into_inner())
+        .clone();
+
+    if let Some(ctrl) = controller {
+        ctrl.dismiss_tray();
+        ctrl.open_settings(target_section)
+            .map_err(|err| err.to_string())?;
+    } else {
+        let _ = crate::shell::settings::plan_settings_open(&state.shell_state, target_section);
+    }
+
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn take_pending_settings_section(
+    state: State<'_, AppState>,
+) -> Result<Option<SettingsSection>, String> {
+    let controller = state
+        .shell
+        .read()
+        .unwrap_or_else(|e| e.into_inner())
+        .clone();
+    if let Some(ctrl) = controller {
+        Ok(ctrl.take_pending_settings_section())
+    } else {
+        Ok(crate::shell::settings::take_pending_settings_section(
+            &state.shell_state,
+        ))
+    }
+}
+
+#[tauri::command]
 pub async fn dismiss_tray(state: State<'_, AppState>) -> Result<(), String> {
     let controller = state
         .shell
@@ -943,6 +987,164 @@ pub async fn export_json(
     }
 
     Ok(json)
+}
+
+#[tauri::command]
+pub async fn get_sources_health(state: State<'_, AppState>) -> Result<DashboardSources, String> {
+    let query = DashboardQuery {
+        range: RangePreset::ThirtyDays,
+        custom_since: None,
+        custom_until: None,
+        group_by: "model".to_string(),
+        active_clients: Vec::new(),
+        search: None,
+        sort: None,
+    };
+    Ok(state.data.dashboard_snapshot(&query).sources)
+}
+
+#[tauri::command]
+pub async fn get_tokscale_settings(
+    state: State<'_, AppState>,
+) -> Result<TokscaleSettingsState, String> {
+    let app_prefs_path = state
+        .shell_state
+        .read()
+        .unwrap_or_else(|e| e.into_inner())
+        .config_dir
+        .as_ref()
+        .map(|d| crate::shell::prefs::preferences_file_path(d));
+
+    cli_config::read_tokscale_settings(state.cli.env(), app_prefs_path.as_deref())
+}
+
+#[tauri::command]
+pub async fn update_tokscale_settings(
+    state: State<'_, AppState>,
+    patch: TokscaleSettingsPatch,
+) -> Result<TokscaleSettingsState, String> {
+    let app_prefs_path = state
+        .shell_state
+        .read()
+        .unwrap_or_else(|e| e.into_inner())
+        .config_dir
+        .as_ref()
+        .map(|d| crate::shell::prefs::preferences_file_path(d));
+
+    cli_config::patch_tokscale_settings(state.cli.env(), app_prefs_path.as_deref(), &patch)
+}
+
+#[tauri::command]
+pub async fn recover_tokscale_timezone(
+    state: State<'_, AppState>,
+) -> Result<CliActionResult, String> {
+    Ok(cli_config::recover_timezone(&state.cli).await)
+}
+
+#[tauri::command]
+pub async fn get_custom_pricing(state: State<'_, AppState>) -> Result<CustomPricingState, String> {
+    cli_config::read_custom_pricing(state.cli.env())
+}
+
+#[tauri::command]
+pub async fn save_custom_pricing(
+    state: State<'_, AppState>,
+    entries: Vec<CustomPricingEntry>,
+) -> Result<CustomPricingState, String> {
+    cli_config::save_custom_pricing(state.cli.env(), &state.cli, &entries).await
+}
+
+#[tauri::command]
+pub async fn lookup_model_pricing(
+    state: State<'_, AppState>,
+    model_id: String,
+) -> Result<ModelPriceLookupResult, String> {
+    cli_config::lookup_model_pricing(&state.cli, &model_id).await
+}
+
+#[tauri::command]
+pub async fn refresh_pricing_catalog(
+    state: State<'_, AppState>,
+) -> Result<CliActionResult, String> {
+    Ok(cli_config::refresh_pricing_catalog(&state.cli).await)
+}
+
+#[tauri::command]
+pub async fn get_providers_status(
+    state: State<'_, AppState>,
+) -> Result<ProvidersStatusPayload, String> {
+    Ok(cli_config::get_providers_status(&state.cli).await)
+}
+
+#[tauri::command]
+pub async fn run_provider_action(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    request: ProviderActionRequest,
+) -> Result<CliActionResult, String> {
+    let result = cli_config::run_provider_action(&state.cli, &request).await;
+    if result.ok && (request.action == "sync" || request.action == "purge_cache") {
+        let _ = state.execute_sync_internal(SyncMode::LocalOffline, Some(&app)).await;
+    }
+    Ok(result)
+}
+
+#[tauri::command]
+pub async fn get_social_status(state: State<'_, AppState>) -> Result<SocialStatusPayload, String> {
+    Ok(cli_config::get_social_status(&state.cli).await)
+}
+
+#[tauri::command]
+pub async fn run_social_action(
+    state: State<'_, AppState>,
+    request: SocialActionRequest,
+) -> Result<CliActionResult, String> {
+    Ok(cli_config::run_social_action(&state.cli, &request).await)
+}
+
+#[tauri::command]
+pub async fn configure_autosubmit(
+    state: State<'_, AppState>,
+    request: AutosubmitConfigRequest,
+) -> Result<CliActionResult, String> {
+    Ok(cli_config::configure_autosubmit(&state.cli, &request).await)
+}
+
+#[tauri::command]
+pub async fn reveal_config_path(path: String) -> Result<(), String> {
+    let trimmed = path.trim();
+    if trimmed.is_empty() {
+        return Err("Path cannot be empty".to_string());
+    }
+    let pb = PathBuf::from(trimmed);
+    tokio::task::spawn_blocking(move || cli_config::reveal_path(&pb))
+        .await
+        .map_err(|err| format!("Reveal path task failed: {err}"))?
+}
+
+#[tauri::command]
+pub async fn pick_path(app: AppHandle, kind: String) -> Result<Option<String>, String> {
+    use tauri_plugin_dialog::DialogExt;
+
+    let dialog_app = app.clone();
+    let is_folder = kind == "folder";
+    let chosen = tokio::task::spawn_blocking(move || {
+        if is_folder {
+            dialog_app.dialog().file().blocking_pick_folder()
+        } else {
+            dialog_app.dialog().file().blocking_pick_file()
+        }
+    })
+    .await
+    .map_err(|err| format!("Picker dialog task failed: {err}"))?;
+
+    match chosen {
+        Some(fp) => fp
+            .into_path()
+            .map(|p| Some(p.to_string_lossy().into_owned()))
+            .map_err(|err| format!("Invalid selected path: {err}")),
+        None => Ok(None),
+    }
 }
 
 async fn refresh_quota_and_notify(app: &AppHandle<Wry>, state: &AppState) {

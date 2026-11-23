@@ -5,6 +5,7 @@ pub mod dashboard;
 pub mod notify;
 pub mod popover;
 pub mod prefs;
+pub mod settings;
 pub mod shortcut;
 pub mod timers;
 pub mod tray;
@@ -17,7 +18,7 @@ use tauri::{AppHandle, Emitter, Manager, Wry};
 
 use crate::contracts::{
     events, CompanionPreferences, DashboardNavigateEvent, ProviderUsageView, RangePreset,
-    SourceWarning, SyncMode, TraySnapshot,
+    SettingsSection, SourceWarning, SyncMode, TraySnapshot,
 };
 
 pub type DashboardHandoff = DashboardNavigateEvent;
@@ -97,6 +98,8 @@ pub struct ShellState {
     pub latest_readout: TraySnapshotLite,
     pub pending_handoff: Option<DashboardHandoff>,
     pub dashboard_open: bool,
+    pub pending_settings_section: Option<SettingsSection>,
+    pub settings_open: bool,
     pub tray_visible: bool,
     pub tray_alive: bool,
     pub last_tray_rect: Option<tauri::Rect>,
@@ -114,6 +117,8 @@ impl Default for ShellState {
             latest_readout: TraySnapshotLite::default(),
             pending_handoff: None,
             dashboard_open: false,
+            pending_settings_section: None,
+            settings_open: false,
             tray_visible: false,
             tray_alive: false,
             last_tray_rect: None,
@@ -262,6 +267,14 @@ impl ShellController {
 
     pub fn open_dashboard(&self, handoff: DashboardHandoff) -> tauri::Result<()> {
         dashboard::open_dashboard(&self.inner.app, &self.inner.state, handoff)
+    }
+
+    pub fn open_settings(&self, section: SettingsSection) -> tauri::Result<()> {
+        settings::open_settings(&self.inner.app, &self.inner.state, section)
+    }
+
+    pub fn take_pending_settings_section(&self) -> Option<SettingsSection> {
+        settings::take_pending_settings_section(&self.inner.state)
     }
 
     pub fn dismiss_tray(&self) {

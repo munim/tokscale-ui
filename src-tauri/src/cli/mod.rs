@@ -1,6 +1,7 @@
 //! Tokscale CLI locator, serialized subprocess queue, and global installer.
 
 pub mod commands;
+pub mod config;
 pub mod error;
 pub mod install;
 pub mod locate;

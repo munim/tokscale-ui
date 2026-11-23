@@ -6,15 +6,16 @@ use tauri::menu::{CheckMenuItem, CheckMenuItemBuilder, MenuBuilder, MenuItemBuil
 use tauri::tray::{MouseButton, MouseButtonState, TrayIcon, TrayIconBuilder, TrayIconEvent};
 use tauri::{AppHandle, Manager, Wry};
 
-use crate::contracts::{DashboardTab, RangePreset, SyncMode};
+use crate::contracts::{DashboardTab, RangePreset, SettingsSection, SyncMode};
 use crate::shell::{
-    dashboard, popover, read_state, write_state, DashboardHandoff, ShellHooks, ShellState,
-    TraySnapshotLite,
+    dashboard, popover, read_state, settings, write_state, DashboardHandoff, ShellHooks,
+    ShellState, TraySnapshotLite,
 };
 
 pub const TRAY_ICON_ID: &str = "tokscale-tray";
 
 pub const MENU_OPEN_DASHBOARD: &str = "tray:open-dashboard";
+pub const MENU_OPEN_SETTINGS: &str = "tray:open-settings";
 pub const MENU_SYNC_NOW: &str = "tray:sync-now";
 pub const MENU_RANGE_TODAY: &str = "tray:range-today";
 pub const MENU_RANGE_7D: &str = "tray:range-7d";
@@ -216,6 +217,8 @@ pub fn setup_tray(
 
     let open_dashboard_item =
         MenuItemBuilder::with_id(MENU_OPEN_DASHBOARD, "Open dashboard").build(app)?;
+    let open_settings_item =
+        MenuItemBuilder::with_id(MENU_OPEN_SETTINGS, "Settings…").build(app)?;
     let sync_now_item = MenuItemBuilder::with_id(MENU_SYNC_NOW, "Sync now").build(app)?;
 
     let range_today = CheckMenuItemBuilder::with_id(MENU_RANGE_TODAY, "Today")
@@ -242,6 +245,7 @@ pub fn setup_tray(
 
     let menu = MenuBuilder::new(app)
         .item(&open_dashboard_item)
+        .item(&open_settings_item)
         .item(&sync_now_item)
         .item(&range_submenu)
         .separator()
@@ -281,6 +285,10 @@ pub fn setup_tray(
                     query: None,
                 };
                 let _ = dashboard::open_dashboard(app, &menu_state, handoff);
+            }
+            MENU_OPEN_SETTINGS => {
+                popover::dismiss_popover(app, &menu_state);
+                let _ = settings::open_settings(app, &menu_state, SettingsSection::App);
             }
             MENU_SYNC_NOW => {
                 let cb = menu_hooks
