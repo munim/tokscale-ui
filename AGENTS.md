@@ -14,8 +14,8 @@ Tauri v2, Rust, and Svelte 5 (runes) desktop companion for `@junhoyeo/tokscale` 
   - Cache schema, range slicing, session-model join: `src-tauri/src/data/`
   - `tokscale` locator, serialized subprocess queue, CLI args, provider sync: `src-tauri/src/cli/`
   - Tray icon, popover, dashboard window lifecycle, `preferences.json`: `src-tauri/src/shell/`
-  - Frontend apps: `src/tray/` (`tray.html`) and `src/dashboard/` (`dashboard.html`); shared code in `src/lib/` (`$lib`).
-- Never cross-import between `src/tray/` and `src/dashboard/`.
+  - Frontend apps: `src/tray/` (`tray.html`), `src/dashboard/` (`dashboard.html`), and `src/settings/` (`settings.html`); shared code in `src/lib/` (`$lib`).
+- Never cross-import between `src/tray/`, `src/dashboard/`, and `src/settings/`.
 - Delegate searches, small edits, and diff checks to `cavecrew` (`cavecrew-investigator`, `cavecrew-builder`, `cavecrew-reviewer`) for compressed `path:line` output.
 - If using `explore`, set thoroughness `quick` and scope to one directory.
 - Run single targeted tests while iterating; run full suite once before finish.
@@ -37,8 +37,8 @@ cargo clippy --manifest-path src-tauri/Cargo.toml -- -D warnings             # R
 bun run tauri build --debug --no-sign                                        # CI smoke build
 ```
 
-- Dual HTML entrypoints (`tray.html`, `dashboard.html`); no `index.html`.
-- Browser dev `/` returns 404. Open `http://localhost:1420/tray.html` or `http://localhost:1420/dashboard.html`.
+- Triple HTML entrypoints (`tray.html`, `dashboard.html`, `settings.html`); no `index.html`.
+- Browser dev `/` returns 404. Open `http://localhost:1420/tray.html`, `http://localhost:1420/dashboard.html`, or `http://localhost:1420/settings.html`.
 
 ## Architecture & Lockstep Invariants
 
@@ -48,10 +48,10 @@ bun run tauri build --debug --no-sign                                        # C
   3. `src/lib/contracts/ipc.ts` (`COMMANDS`, `EVENTS`, types, mock fallback) and `src/lib/contracts/mocks.ts`.
 - **Mirrored harness hashing**: `src-tauri/src/data/harness.rs` and `src/lib/harnesses/registry.ts` duplicate 64-bit FNV-1a (`hue = hash % 360`) and curated palettes (`claude`, `codex`, `opencode`, `gemini`, `other`). Keep both identical.
 - **Window lifecycle**: `tray` WebView (`tray.html`, 360px) stays hidden in background and resizes via `resize_tray`.
-- `dashboard` WebView (`dashboard.html`) is absent from `tauri.conf.json`. `src-tauri/src/shell/dashboard.rs` creates it on demand and destroys it on close.
+- `dashboard` (`dashboard.html`) and `settings` (`settings.html`) WebViews are absent from `tauri.conf.json`. `src-tauri/src/shell/dashboard.rs` and `src-tauri/src/shell/settings.rs` create them on demand and destroy them on close.
 - Reopening dashboard serves state from in-memory `DataService` with zero extra disk reads.
-- Cold dashboard open passes target route via `DashboardSnapshot.pendingHandoff`; warm open emits `tokscale://dashboard-navigate`.
-- macOS switches `ActivationPolicy::Accessory` (tray only) and `Regular` (dashboard open); requires `macOSPrivateApi: true`.
+- Cold dashboard open passes target route via `DashboardSnapshot.pendingHandoff`; warm open emits `tokscale://dashboard-navigate`. Cold settings open passes target section via `take_pending_settings_section`; warm open emits `tokscale://settings-navigate`.
+- macOS switches `ActivationPolicy::Accessory` (tray only) and `Regular` (while dashboard or settings is open); requires `macOSPrivateApi: true`.
 - **Cache vs CLI state**: Startup reads `~/.config/tokscale/cache/tui-data-cache.json` (`EXPECTED_SCHEMA_VERSION = 12`) and `subscription-usage-cache.json` (`TOKSCALE_CONFIG_DIR` overrides `~/.config/tokscale`).
 - Missing, corrupt, or drifted cache (or missing today data) triggers CLI fallback. Later `hydrate_from_disk()` calls must not clobber newer `cli_synced_at` state.
 
@@ -61,7 +61,7 @@ bun run tauri build --debug --no-sign                                        # C
 - `tokscale report` rejects `--no-spinner` (`debug_assert!` in `src-tauri/src/cli/commands.rs`).
 - Session title enrichment (`report --json`) never passes `--summarizer` (free local summarizer only, no cloud LLM) and runs only for `today` or `7d`.
 - Route all `tokscale` and installer (`bun`/`npm`) subprocesses through `CliService`. `CliQueue` serializes runs, deduplicates identical in-flight argv, and sets `NO_COLOR=1`.
-- Never modify `~/.config/tokscale/settings.json`. Write UI preferences only to app config `preferences.json` via `shell::prefs::patch_preferences` (atomic `.json.tmp` rename; preserves unknown keys).
+- Write desktop UI preferences to app config `preferences.json` via `shell::prefs::patch_preferences` and CLI configuration edits to `~/.config/tokscale/settings.json` / `custom-pricing.json` via `cli::config` (both use atomic `.json.tmp` rename and preserve unknown keys).
 - Never read or log provider credential files (`cursor`, `trae`, `warp`, `capy`, `antigravity`). Check file existence with `std::fs::metadata` only (`src-tauri/src/cli/providers.rs`).
 
 ## Testing Gotchas
