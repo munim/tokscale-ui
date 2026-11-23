@@ -267,74 +267,31 @@ describe('TrayApp', () => {
     });
   });
 
-  it('toggles QuickSettings, updates preferences/theme/CLI, and handles Escape and Quit', async () => {
+  it('opens the separate Settings window via gear icon or Cmd+, and handles preferences-updated, Escape, and Quit', async () => {
     const { unmount } = render(TrayApp);
 
     const todaySnap = mockTraySnapshot('today');
     await screen.findByText(`$${todaySnap.total.cost.toFixed(2)}`);
 
-    const gearBtn = screen.getByRole('button', { name: 'Sources & settings' });
-    expect(gearBtn).toHaveAttribute('aria-pressed', 'false');
-
+    const gearBtn = screen.getByRole('button', { name: 'Settings' });
     await fireEvent.click(gearBtn);
-    expect(gearBtn).toHaveAttribute('aria-pressed', 'true');
+    expect(invokeMock).toHaveBeenCalledWith(COMMANDS.openSettings, {});
 
-    // Sources retry on warn row
-    const retryButtons = screen.getAllByRole('button', { name: 'Retry' });
-    expect(retryButtons.length).toBeGreaterThan(0);
-    await fireEvent.click(retryButtons[0]);
-    expect(invokeMock).toHaveBeenCalledWith(COMMANDS.triggerSync, {
-      mode: { retryClient: 'trae' },
-    });
-
-    // Menubar display
-    const menubarGroup = screen.getByRole('radiogroup', { name: 'Menubar display' });
-    await fireEvent.click(within(menubarGroup).getByRole('radio', { name: 'Tokens' }));
-    expect(invokeMock).toHaveBeenCalledWith(COMMANDS.updatePreferences, {
-      patch: { menubarDisplay: 'tokens' },
-    });
-
-    // Theme update
-    const themeGroup = screen.getByRole('radiogroup', { name: 'Theme' });
-    await fireEvent.click(within(themeGroup).getByRole('radio', { name: 'Dark' }));
-    expect(document.documentElement.dataset.theme).toBe('dark');
-    expect(invokeMock).toHaveBeenCalledWith(COMMANDS.updatePreferences, {
-      patch: { theme: 'dark' },
-    });
-
-    // Launch at login
-    const launchCheckbox = screen.getByLabelText('Launch at login');
-    await fireEvent.click(launchCheckbox);
-    expect(invokeMock).toHaveBeenCalledWith(COMMANDS.updatePreferences, {
-      patch: { launchAtLogin: true },
-    });
-
-    // Global shortcut
-    const shortcutInput = screen.getByPlaceholderText('Not set');
-    await fireEvent.change(shortcutInput, { target: { value: 'Cmd+Shift+T' } });
-    expect(invokeMock).toHaveBeenCalledWith(COMMANDS.updatePreferences, {
-      patch: { globalShortcut: 'Cmd+Shift+T' },
-    });
-
-    // Alerts
-    const notifyCheckbox = screen.getByLabelText('Notify near quota limit');
-    await fireEvent.click(notifyCheckbox);
-    expect(invokeMock).toHaveBeenCalledWith(COMMANDS.updatePreferences, {
-      patch: { notificationsEnabled: true },
-    });
-
-    const quotaInput = screen.getByLabelText('Quota alert %');
-    await fireEvent.change(quotaInput, { target: { value: '90' } });
-    expect(invokeMock).toHaveBeenCalledWith(COMMANDS.updatePreferences, {
-      patch: { quotaAlertPercent: 90 },
-    });
-
-    // CLI install / upgrade
-    await fireEvent.click(screen.getByRole('button', { name: 'Install / Upgrade global tokscale' }));
-    expect(invokeMock).toHaveBeenCalledWith(COMMANDS.installOrUpgradeCli);
-    await screen.findByText('tokscale 4.24.0 installed');
+    // Cmd+, also opens the Settings window
+    await fireEvent.keyDown(window, { key: ',', metaKey: true });
+    expect(
+      invokeMock.mock.calls.filter(([cmd]) => cmd === COMMANDS.openSettings),
+    ).toHaveLength(2);
 
     // preferences-updated event applies theme immediately
+    emitTauriEvent(EVENTS.preferencesUpdated, {
+      ...prefsState,
+      theme: 'dark',
+    });
+    await waitFor(() => {
+      expect(document.documentElement.dataset.theme).toBe('dark');
+    });
+
     emitTauriEvent(EVENTS.preferencesUpdated, {
       ...prefsState,
       theme: 'light',

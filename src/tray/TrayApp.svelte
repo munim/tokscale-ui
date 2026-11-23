@@ -8,7 +8,6 @@
   import FooterActions from './components/FooterActions.svelte';
   import HarnessChart from './components/HarnessChart.svelte';
   import KpiRow from './components/KpiRow.svelte';
-  import QuickSettings from './components/QuickSettings.svelte';
   import RangeSwitch from './components/RangeSwitch.svelte';
   import StateBanner from './components/StateBanner.svelte';
   import TopModels from './components/TopModels.svelte';
@@ -53,6 +52,11 @@
   });
 
   function handleWindowKeydown(event: KeyboardEvent): void {
+    if ((event.metaKey || event.ctrlKey) && event.key === ',') {
+      event.preventDefault();
+      store.openSettings();
+      return;
+    }
     if (event.key === 'Escape') {
       event.preventDefault();
       store.dismiss();
@@ -73,9 +77,8 @@
 <main bind:this={shellEl} class="tray-shell ui-root" data-view="tray">
   <TrayHeader
     syncing={store.isSyncing}
-    settingsOpen={store.settingsOpen}
     onsync={() => void store.triggerSync('full_manual')}
-    ontogglesettings={store.toggleSettings}
+    onopensettings={() => store.openSettings()}
     bind:firstActionEl
   />
 
@@ -87,47 +90,34 @@
   />
 
   <div class="tray-body">
-    {#if store.settingsOpen}
-      <QuickSettings
-        sources={store.snapshot?.sources ?? []}
-        preferences={store.preferences}
-        cliInfo={store.cliInfo ?? store.snapshot?.cliInfo ?? null}
-        cliInstalling={store.cliInstalling}
-        cliInstallResult={store.cliInstallResult}
-        onretry={(client) => void store.triggerSync({ retryClient: client })}
-        onupdatepreferences={store.updatePreferences}
-        oninstallcli={() => void store.installOrUpgradeCli()}
+    <RangeSwitch value={store.activeRange} onchange={store.setRange} />
+
+    {#if store.snapshot}
+      <KpiRow
+        cost={store.snapshot.total.cost}
+        tokens={store.snapshot.total.tokens}
+        sessions={store.snapshot.total.sessions}
       />
-    {:else}
-      <RangeSwitch value={store.activeRange} onchange={store.setRange} />
 
-      {#if store.snapshot}
-        <KpiRow
-          cost={store.snapshot.total.cost}
-          tokens={store.snapshot.total.tokens}
-          sessions={store.snapshot.total.sessions}
+      {#if store.isEmpty}
+        <EmptyState
+          title="No usage in this range"
+          body="Switch to a wider range or scan your local sources to see usage here."
+          actionLabel={store.activeRange === 'all' ? 'Scan sources' : 'View all time'}
+          onaction={() => {
+            if (store.activeRange === 'all') {
+              void store.triggerSync('full_manual');
+            } else {
+              store.setRange('all');
+            }
+          }}
         />
-
-        {#if store.isEmpty}
-          <EmptyState
-            title="No usage in this range"
-            body="Switch to a wider range or scan your local sources to see usage here."
-            actionLabel={store.activeRange === 'all' ? 'Scan sources' : 'View all time'}
-            onaction={() => {
-              if (store.activeRange === 'all') {
-                void store.triggerSync('full_manual');
-              } else {
-                store.setRange('all');
-              }
-            }}
-          />
-        {:else}
-          <HarnessChart bars={store.snapshot.bars} harnesses={store.snapshot.harnesses} />
-          <TopModels models={store.snapshot.topModels} onselect={store.openModelInDashboard} />
-        {/if}
-      {:else if store.loading}
-        <div class="tray-loading" role="status">Loading usage…</div>
+      {:else}
+        <HarnessChart bars={store.snapshot.bars} harnesses={store.snapshot.harnesses} />
+        <TopModels models={store.snapshot.topModels} onselect={store.openModelInDashboard} />
       {/if}
+    {:else if store.loading}
+      <div class="tray-loading" role="status">Loading usage…</div>
     {/if}
   </div>
 

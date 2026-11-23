@@ -3,9 +3,8 @@ import {
   onPreferencesUpdated,
   onSnapshotUpdated,
   onSyncProgress,
-  type CliInstallResult,
-  type CliResolutionInfo,
   type CompanionPreferences,
+  type SettingsSection,
   type SnapshotEvent,
   type SourceWarning,
   type SyncMode,
@@ -35,11 +34,6 @@ export function createTrayStore() {
   let error = $state<string | null>(null);
 
   let preferences = $state<CompanionPreferences>({ ...DEFAULT_PREFERENCES });
-  let cliInfo = $state<CliResolutionInfo | null>(null);
-  let cliInstalling = $state(false);
-  let cliInstallResult = $state<CliInstallResult | null>(null);
-
-  let settingsOpen = $state(false);
   let syncProgress = $state<SyncProgressEvent | null>(null);
   let manualSyncing = $state(false);
 
@@ -88,9 +82,6 @@ export function createTrayStore() {
       .getTraySnapshot(range)
       .then((data) => {
         snapshots = { ...snapshots, [range]: data };
-        if (!cliInfo && data.cliInfo) {
-          cliInfo = data.cliInfo;
-        }
         return data;
       })
       .catch((err) => {
@@ -124,7 +115,6 @@ export function createTrayStore() {
       eventPartial = status.warnings.length > 0;
       eventWarnings = status.warnings;
 
-      const cachedRanges = Object.keys(snapshots) as TrayRange[];
       const nextCache: Partial<Record<TrayRange, TraySnapshot>> = {};
       if (snapshots[activeRange]) {
         nextCache[activeRange] = {
@@ -135,60 +125,11 @@ export function createTrayStore() {
       snapshots = nextCache;
 
       await fetchRange(activeRange, true);
-      if (cachedRanges.length > 1) {
-        // Other cached ranges were invalidated above and will fetch fresh data on demand.
-      }
     } catch (err) {
       error = err instanceof Error ? err.message : 'Sync failed';
     } finally {
       manualSyncing = false;
     }
-  }
-
-  async function updatePreferences(patch: Partial<CompanionPreferences>): Promise<void> {
-    if (patch.theme) {
-      applyTheme(patch.theme);
-    }
-    preferences = { ...preferences, ...patch };
-    try {
-      const saved = await ipc.updatePreferences(patch);
-      preferences = saved;
-      if (saved.theme) {
-        applyTheme(saved.theme);
-      }
-    } catch (err) {
-      error = err instanceof Error ? err.message : 'Failed to save preferences';
-    }
-  }
-
-  async function installOrUpgradeCli(): Promise<void> {
-    if (cliInstalling) {
-      return;
-    }
-    cliInstalling = true;
-    cliInstallResult = null;
-    try {
-      const result = await ipc.installOrUpgradeCli();
-      cliInstallResult = result;
-      if (result.ok) {
-        try {
-          cliInfo = await ipc.getCliInfo();
-        } catch {
-          // Keep previous CLI info if refresh fails.
-        }
-      }
-    } catch (err) {
-      cliInstallResult = {
-        ok: false,
-        message: err instanceof Error ? err.message : 'CLI installation failed',
-      };
-    } finally {
-      cliInstalling = false;
-    }
-  }
-
-  function toggleSettings(): void {
-    settingsOpen = !settingsOpen;
   }
 
   function openModelInDashboard(model: string): void {
@@ -206,6 +147,10 @@ export function createTrayStore() {
     });
   }
 
+  function openSettings(section?: SettingsSection): void {
+    void ipc.openSettings(section);
+  }
+
   function dismiss(): void {
     void ipc.dismissTray();
   }
@@ -218,7 +163,6 @@ export function createTrayStore() {
     eventPartial = payload.partial || payload.warnings.length > 0;
     eventWarnings = payload.warnings;
 
-    // Keep the currently visible snapshot rendered while refreshing, and invalidate other cached ranges.
     const current = snapshots[activeRange];
     snapshots = current ? { [activeRange]: current } : {};
     void fetchRange(activeRange, true);
@@ -261,14 +205,6 @@ export function createTrayStore() {
       })
       .catch(() => {});
 
-    void ipc
-      .getCliInfo()
-      .then((info) => {
-        if (disposed) return;
-        cliInfo = info;
-      })
-      .catch(() => {});
-
     return () => {
       disposed = true;
       for (const unlisten of unlisteners) {
@@ -297,18 +233,6 @@ export function createTrayStore() {
     get preferences() {
       return preferences;
     },
-    get cliInfo() {
-      return cliInfo;
-    },
-    get cliInstalling() {
-      return cliInstalling;
-    },
-    get cliInstallResult() {
-      return cliInstallResult;
-    },
-    get settingsOpen() {
-      return settingsOpen;
-    },
     get syncProgress() {
       return syncProgress;
     },
@@ -328,11 +252,9 @@ export function createTrayStore() {
     setRange,
     fetchRange,
     triggerSync,
-    updatePreferences,
-    installOrUpgradeCli,
-    toggleSettings,
     openModelInDashboard,
     openDashboard,
+    openSettings,
     dismiss,
     quit,
   };

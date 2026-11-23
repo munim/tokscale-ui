@@ -3,17 +3,15 @@
 
   interface Props {
     syncing: boolean;
-    settingsOpen: boolean;
     onsync: () => void;
-    ontogglesettings: () => void;
+    onopensettings: () => void;
     firstActionEl?: HTMLButtonElement | null;
   }
 
   let {
     syncing,
-    settingsOpen,
     onsync,
-    ontogglesettings,
+    onopensettings,
     firstActionEl = $bindable(null),
   }: Props = $props();
 </script>
@@ -61,11 +59,9 @@
     <button
       type="button"
       class="tray-icon-btn ui-focusable"
-      class:is-active={settingsOpen}
-      aria-label="Sources & settings"
-      title="Sources & settings"
-      aria-pressed={settingsOpen}
-      onclick={ontogglesettings}
+      aria-label="Settings"
+      title="Settings"
+      onclick={onopensettings}
     >
       <svg
         width="16"
@@ -144,12 +140,6 @@
     border-color: color-mix(in oklch, var(--accent) 52%, var(--border));
     box-shadow: 0 0 0 2px color-mix(in oklch, var(--accent) 18%, transparent);
     color: var(--fg);
-  }
-
-  .tray-icon-btn.is-active {
-    background: var(--accent-soft);
-    color: var(--accent-strong);
-    border-color: color-mix(in oklch, var(--accent) 45%, var(--border));
   }
 
   .tray-icon-btn.is-syncing {
