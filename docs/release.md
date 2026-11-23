@@ -78,10 +78,10 @@ Pushing a tag that matches `v*.*.*` triggers `.github/workflows/release.yml`. Th
 |---|---|---|
 | `macos-latest` | `aarch64-apple-darwin` | `.dmg`, `.app.tar.gz` |
 | `macos-latest` | `x86_64-apple-darwin` | `.dmg`, `.app.tar.gz` |
-| `windows-latest` | default | `.msi`, `.exe` (NSIS) |
+| `windows-latest` | default | `.exe` (NSIS per-user) |
 | `ubuntu-22.04` | default | `.AppImage`, `.deb` |
 
-The release is created as a published, non-draft, non-prerelease. Its title is `Tokscale UI vX.Y.Z`.
+The release is created as a published, non-draft, non-prerelease with commit-generated release notes (populated into `latest.json` `notes`), `SHA256SUMS.txt`, and verified macOS ad-hoc bundle signatures.
 
 To test the pipeline before a real release, push a throwaway tag such as `v0.0.0-rc.1` on a fork.
 

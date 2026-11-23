@@ -9,6 +9,7 @@ pub mod events {
     pub const SESSION_TITLES_UPDATED: &str = "tokscale://session-titles-updated";
     pub const PREFERENCES_UPDATED: &str = "tokscale://preferences-updated";
     pub const SETTINGS_NAVIGATE: &str = "tokscale://settings-navigate";
+    pub const UPDATE_STATUS: &str = "tokscale://update-status";
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
@@ -96,6 +97,10 @@ pub struct SyncStatus {
     pub warnings: Vec<SourceWarning>,
 }
 
+fn default_true() -> bool {
+    true
+}
+
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct CompanionPreferences {
@@ -111,6 +116,10 @@ pub struct CompanionPreferences {
     pub session_title_enrichment: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub custom_tokscale_path: Option<String>,
+    #[serde(default = "default_true")]
+    pub auto_check_updates: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub skipped_update_version: Option<String>,
 }
 
 impl Default for CompanionPreferences {
@@ -125,6 +134,8 @@ impl Default for CompanionPreferences {
             daily_budget_usd: None,
             session_title_enrichment: true,
             custom_tokscale_path: None,
+            auto_check_updates: true,
+            skipped_update_version: None,
         }
     }
 }
@@ -771,6 +782,54 @@ pub struct AutosubmitConfigRequest {
     pub clients: Vec<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub range: Option<String>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[serde(rename_all = "camelCase")]
+pub enum UpdatePhase {
+    #[default]
+    Idle,
+    Checking,
+    UpToDate,
+    Available,
+    Downloading,
+    Ready,
+    Error,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[serde(rename_all = "camelCase")]
+pub enum UpdateCapability {
+    #[default]
+    SelfUpdate,
+    NotifyOnly,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateStatusPayload {
+    pub current_version: String,
+    pub phase: UpdatePhase,
+    pub capability: UpdateCapability,
+    pub install_method: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub available_version: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub release_notes: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pub_date: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub downloaded_bytes: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub total_bytes: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_checked_at: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fallback_hint: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub release_url: Option<String>,
 }
 
 #[cfg(test)]

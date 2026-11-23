@@ -3,6 +3,7 @@ import {
   onPreferencesUpdated,
   onSnapshotUpdated,
   onSyncProgress,
+  onUpdateStatus,
   type CompanionPreferences,
   type SettingsSection,
   type SnapshotEvent,
@@ -11,6 +12,7 @@ import {
   type SyncProgressEvent,
   type TraySnapshot,
   type UnlistenFn,
+  type UpdateStatusPayload,
 } from '$lib/contracts/ipc';
 import { applyTheme } from '$lib/state';
 
@@ -25,6 +27,7 @@ const DEFAULT_PREFERENCES: CompanionPreferences = {
   notificationsEnabled: false,
   quotaAlertPercent: 85,
   sessionTitleEnrichment: true,
+  autoCheckUpdates: true,
 };
 
 export function createTrayStore() {
@@ -36,6 +39,8 @@ export function createTrayStore() {
   let preferences = $state<CompanionPreferences>({ ...DEFAULT_PREFERENCES });
   let syncProgress = $state<SyncProgressEvent | null>(null);
   let manualSyncing = $state(false);
+  let updateStatus = $state<UpdateStatusPayload | null>(null);
+  let dismissedUpdateVersion = $state<string | null>(null);
 
   let eventPartial = $state(false);
   let eventWarnings = $state<SourceWarning[]>([]);
@@ -63,6 +68,23 @@ export function createTrayStore() {
       return false;
     }
     return snap.total.cost <= 0 && snap.total.tokens <= 0 && snap.total.sessions <= 0;
+  });
+
+  let visibleUpdate = $derived.by((): UpdateStatusPayload | null => {
+    const status = updateStatus;
+    if (!status) return null;
+    if (status.phase !== 'available' && status.phase !== 'downloading' && status.phase !== 'ready') {
+      return null;
+    }
+    if (status.phase === 'available') {
+      if (status.availableVersion && status.availableVersion === preferences.skippedUpdateVersion) {
+        return null;
+      }
+      if (status.availableVersion && status.availableVersion === dismissedUpdateVersion) {
+        return null;
+      }
+    }
+    return status;
   });
 
   async function fetchRange(range: TrayRange, force = false): Promise<TraySnapshot | null> {
@@ -159,6 +181,29 @@ export function createTrayStore() {
     void ipc.quitApp();
   }
 
+  function dismissUpdateBanner(): void {
+    if (updateStatus?.availableVersion) {
+      dismissedUpdateVersion = updateStatus.availableVersion;
+    }
+  }
+
+  async function downloadAndInstallUpdate(): Promise<void> {
+    try {
+      const next = await ipc.downloadAndInstallUpdate();
+      updateStatus = next;
+    } catch (err) {
+      error = err instanceof Error ? err.message : 'Update failed';
+    }
+  }
+
+  async function restartToApplyUpdate(): Promise<void> {
+    try {
+      await ipc.restartToApplyUpdate();
+    } catch (err) {
+      error = err instanceof Error ? err.message : 'Restart failed';
+    }
+  }
+
   function handleSnapshotUpdated(payload: SnapshotEvent): void {
     eventPartial = payload.partial || payload.warnings.length > 0;
     eventWarnings = payload.warnings;
@@ -194,8 +239,24 @@ export function createTrayStore() {
     register(onSnapshotUpdated(handleSnapshotUpdated));
     register(onSyncProgress(handleSyncProgress));
     register(onPreferencesUpdated(handlePreferencesUpdated));
+    register(
+      onUpdateStatus((payload) => {
+        updateStatus = payload;
+        if (payload.phase === 'downloading' || payload.phase === 'ready') {
+          dismissedUpdateVersion = null;
+        }
+      }),
+    );
 
     void fetchRange(activeRange);
+    void ipc
+      .getUpdateStatus()
+      .then((status) => {
+        if (!disposed && status) {
+          updateStatus = status;
+        }
+      })
+      .catch(() => {});
     void ipc
       .getPreferences()
       .then((prefs) => {
@@ -248,6 +309,9 @@ export function createTrayStore() {
     get isEmpty() {
       return isEmpty;
     },
+    get visibleUpdate() {
+      return visibleUpdate;
+    },
     init,
     setRange,
     fetchRange,
@@ -257,6 +321,9 @@ export function createTrayStore() {
     openSettings,
     dismiss,
     quit,
+    dismissUpdateBanner,
+    downloadAndInstallUpdate,
+    restartToApplyUpdate,
   };
 }
 

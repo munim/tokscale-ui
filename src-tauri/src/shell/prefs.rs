@@ -122,6 +122,9 @@ fn build_merged_object(
     merged.entry("globalShortcut".to_string()).or_insert(Value::Null);
     merged.entry("dailyBudgetUsd".to_string()).or_insert(Value::Null);
     merged.entry("customTokscalePath".to_string()).or_insert(Value::Null);
+    merged
+        .entry("skippedUpdateVersion".to_string())
+        .or_insert(Value::Null);
 
     if let Some(existing_map) = existing {
         for (key, value) in existing_map {

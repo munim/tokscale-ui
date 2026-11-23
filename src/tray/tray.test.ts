@@ -1,8 +1,19 @@
 import '@testing-library/jest-dom/vitest';
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { COMMANDS, EVENTS, type RangePreset, type TraySnapshot } from '$lib/contracts/ipc';
-import { mockCliInfo, mockPreferences, mockTraySnapshot } from '$lib/contracts/mocks';
+import {
+  COMMANDS,
+  EVENTS,
+  type RangePreset,
+  type TraySnapshot,
+  type UpdateStatusPayload,
+} from '$lib/contracts/ipc';
+import {
+  mockCliInfo,
+  mockPreferences,
+  mockTraySnapshot,
+  mockUpdateStatus,
+} from '$lib/contracts/mocks';
 
 const { invokeMock, listenMock, eventHandlers, unlistenMocks } = vi.hoisted(() => {
   const eventHandlers = new Map<string, Set<(event: { payload: unknown }) => void>>();
@@ -84,6 +95,16 @@ describe('TrayApp', () => {
         case COMMANDS.dismissTray:
         case COMMANDS.resizeTray:
         case COMMANDS.quitApp:
+          return undefined;
+        case COMMANDS.getUpdateStatus:
+          return mockUpdateStatus();
+        case COMMANDS.downloadAndInstallUpdate:
+          return {
+            ...mockUpdateStatus(),
+            phase: 'ready',
+            availableVersion: '0.2.0',
+          } satisfies UpdateStatusPayload;
+        case COMMANDS.restartToApplyUpdate:
           return undefined;
         default:
           return undefined;
@@ -310,7 +331,7 @@ describe('TrayApp', () => {
 
     // Listeners are cleaned up on unmount
     unmount();
-    expect(unlistenMocks).toHaveLength(3);
+    expect(unlistenMocks).toHaveLength(4);
     for (const unlisten of unlistenMocks) {
       expect(unlisten).toHaveBeenCalledTimes(1);
     }
@@ -390,5 +411,41 @@ describe('TrayApp', () => {
       rectSpy.mockRestore();
       vi.unstubAllGlobals();
     }
+  });
+
+  it('shows UpdateBanner on tokscale://update-status and handles update, restart, and dismiss', async () => {
+    render(TrayApp);
+    await screen.findByRole('button', { name: 'Open dashboard' });
+    await waitFor(() => {
+      expect(eventHandlers.get(EVENTS.updateStatus)?.size ?? 0).toBeGreaterThan(0);
+    });
+
+    emitTauriEvent(EVENTS.updateStatus, {
+      ...mockUpdateStatus(),
+      phase: 'available',
+      availableVersion: '0.2.0',
+    } satisfies UpdateStatusPayload);
+
+    expect(await screen.findByText('Update available · v0.2.0')).toBeInTheDocument();
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Update' }));
+    await waitFor(() => {
+      expect(invokeMock).toHaveBeenCalledWith(COMMANDS.downloadAndInstallUpdate);
+    });
+
+    expect(await screen.findByText('v0.2.0 ready')).toBeInTheDocument();
+    await fireEvent.click(screen.getByRole('button', { name: 'Restart' }));
+    expect(invokeMock).toHaveBeenCalledWith(COMMANDS.restartToApplyUpdate);
+
+    // Emit another available update and dismiss it for this session
+    emitTauriEvent(EVENTS.updateStatus, {
+      ...mockUpdateStatus(),
+      phase: 'available',
+      availableVersion: '0.3.0',
+    } satisfies UpdateStatusPayload);
+    expect(await screen.findByText('Update available · v0.3.0')).toBeInTheDocument();
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Dismiss update notice' }));
+    expect(screen.queryByText('Update available · v0.3.0')).not.toBeInTheDocument();
   });
 });

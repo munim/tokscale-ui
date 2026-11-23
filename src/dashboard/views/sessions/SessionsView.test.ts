@@ -48,6 +48,7 @@ describe('SessionsView', () => {
       notificationsEnabled: false,
       quotaAlertPercent: 85,
       sessionTitleEnrichment: true,
+      autoCheckUpdates: true,
     });
     vi.spyOn(api, 'getSessionsView').mockResolvedValue(payload);
     vi.spyOn(api, 'onSessionTitlesUpdated').mockResolvedValue(() => {});
@@ -103,6 +104,7 @@ describe('SessionsView', () => {
       notificationsEnabled: false,
       quotaAlertPercent: 85,
       sessionTitleEnrichment: true,
+      autoCheckUpdates: true,
     });
 
     let titleHandler: ((payload: SessionTitlesUpdatedEvent) => void) | null = null;
@@ -148,6 +150,7 @@ describe('SessionsView', () => {
       notificationsEnabled: false,
       quotaAlertPercent: 85,
       sessionTitleEnrichment: true,
+      autoCheckUpdates: true,
     });
     const updatePrefsSpy = vi.spyOn(api, 'updatePreferences').mockResolvedValue({
       menubarDisplay: 'cost',
@@ -156,6 +159,7 @@ describe('SessionsView', () => {
       notificationsEnabled: false,
       quotaAlertPercent: 85,
       sessionTitleEnrichment: false,
+      autoCheckUpdates: true,
     });
     vi.spyOn(api, 'onSessionTitlesUpdated').mockResolvedValue(() => {});
 
@@ -197,6 +201,7 @@ describe('SessionsView', () => {
       notificationsEnabled: false,
       quotaAlertPercent: 85,
       sessionTitleEnrichment: true,
+      autoCheckUpdates: true,
     });
     vi.spyOn(api, 'onSessionTitlesUpdated').mockResolvedValue(() => {});
 

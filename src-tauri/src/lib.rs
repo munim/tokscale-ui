@@ -46,6 +46,11 @@ pub fn run() {
             commands::configure_autosubmit,
             commands::reveal_config_path,
             commands::pick_path,
+            commands::get_update_status,
+            commands::check_for_updates,
+            commands::download_and_install_update,
+            commands::restart_to_apply_update,
+            commands::skip_update_version,
         ])
         .setup(|app| {
             if app

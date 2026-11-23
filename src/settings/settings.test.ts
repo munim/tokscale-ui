@@ -7,6 +7,7 @@ import {
   type CompanionPreferences,
   type CustomPricingEntry,
   type TokscaleSettingsPatch,
+  type UpdateStatusPayload,
 } from '$lib/contracts/ipc';
 import {
   mockCliInfo,
@@ -16,6 +17,7 @@ import {
   mockProvidersStatus,
   mockSocialStatus,
   mockTokscaleSettings,
+  mockUpdateStatus,
 } from '$lib/contracts/mocks';
 
 const { invokeMock, listenMock, eventHandlers, unlistenMocks } = vi.hoisted(() => {
@@ -162,6 +164,28 @@ describe('SettingsApp (Option B + Sidebar Search)', () => {
           return undefined;
         case COMMANDS.pickPath:
           return '/Users/dev/custom/tokscale';
+        case COMMANDS.getUpdateStatus:
+          return mockUpdateStatus();
+        case COMMANDS.checkForUpdates:
+          return {
+            ...mockUpdateStatus(),
+            phase: 'available',
+            availableVersion: '0.2.0',
+            releaseNotes: '- Faster startup\n- Signed updater',
+          } satisfies UpdateStatusPayload;
+        case COMMANDS.downloadAndInstallUpdate:
+          return {
+            ...mockUpdateStatus(),
+            phase: 'ready',
+            availableVersion: '0.2.0',
+          } satisfies UpdateStatusPayload;
+        case COMMANDS.skipUpdateVersion:
+          return {
+            ...mockUpdateStatus(),
+            phase: 'idle',
+          } satisfies UpdateStatusPayload;
+        case COMMANDS.restartToApplyUpdate:
+          return undefined;
         default:
           return undefined;
       }
@@ -276,5 +300,41 @@ describe('SettingsApp (Option B + Sidebar Search)', () => {
     await screen.findByText('Tokscale CLI Binary');
     await fireEvent.click(screen.getByRole('button', { name: 'Install / Upgrade global tokscale' }));
     expect(invokeMock).toHaveBeenCalledWith(COMMANDS.installOrUpgradeCli);
+  });
+
+  it('supports App & Updates check, download, restart, and notifyOnly fallback in AppAlertsView', async () => {
+    render(SettingsApp);
+    await screen.findByText('App & Updates');
+
+    // Toggle autoCheckUpdates
+    const autoCheck = screen.getByRole('switch', { name: 'Check for updates automatically' });
+    await fireEvent.click(autoCheck);
+    expect(invokeMock).toHaveBeenCalledWith(COMMANDS.updatePreferences, {
+      patch: { autoCheckUpdates: false },
+    });
+
+    // Manual update check reveals release notes & Download button
+    await fireEvent.click(screen.getByRole('button', { name: 'Check for Updates' }));
+    await screen.findByRole('button', { name: 'Download & Install v0.2.0' });
+    expect(screen.getByText(/Faster startup/)).toBeInTheDocument();
+
+    // Download & install transitions to Ready -> Restart button
+    await fireEvent.click(screen.getByRole('button', { name: 'Download & Install v0.2.0' }));
+    const restartBtn = await screen.findByRole('button', { name: 'Restart to Apply v0.2.0' });
+    await fireEvent.click(restartBtn);
+    expect(invokeMock).toHaveBeenCalledWith(COMMANDS.restartToApplyUpdate);
+
+    // NotifyOnly install method renders fallback hint instead of Download button
+    emitTauriEvent(EVENTS.updateStatus, {
+      ...mockUpdateStatus(),
+      phase: 'available',
+      capability: 'notifyOnly',
+      installMethod: 'linux-package',
+      availableVersion: '0.3.0',
+      fallbackHint: 'curl -fsSL https://raw.githubusercontent.com/munim/tokscale-ui/main/scripts/install.sh | sh',
+    } satisfies UpdateStatusPayload);
+
+    await screen.findByText(/install\.sh \| sh/);
+    expect(screen.queryByRole('button', { name: 'Download & Install v0.3.0' })).not.toBeInTheDocument();
   });
 });

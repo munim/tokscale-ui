@@ -42,15 +42,55 @@ You can also use the one-click install in the app's Quick Settings.
 
 ## Install
 
-Download the artifact for your platform from [GitHub Releases](../../releases):
+### macOS (no Apple Developer ID required)
 
-| Platform | Artifacts |
-|---|---|
-| macOS (Apple Silicon and Intel) | `.dmg` or `.app` |
-| Windows | `.msi` or `.exe` |
-| Linux | `.AppImage` or `.deb` |
+Recommended (clears Gatekeeper quarantine automatically on install; future updates happen seamlessly in-app):
 
-The app includes a signed auto-updater. When a new release is published, it prompts you to upgrade.
+```bash
+brew trust --cask munim/tap/tokscale-ui   # once for third-party tap on Homebrew 6+
+brew install --cask munim/tap/tokscale-ui
+```
+
+Or without Homebrew:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/munim/tokscale-ui/main/scripts/install.sh | sh
+```
+
+If you download the `.dmg` manually from [GitHub Releases](../../releases) in a browser, clear quarantine once after dragging `Tokscale UI.app` to `/Applications`:
+
+```bash
+xattr -dr com.apple.quarantine "/Applications/Tokscale UI.app"
+```
+
+### Windows
+
+Recommended (per-user install without browser SmartScreen Mark of the Web):
+
+```powershell
+# Scoop
+scoop bucket add munim https://github.com/munim/scoop-bucket
+scoop install tokscale-ui
+
+# Or PowerShell installer (silent per-user NSIS)
+irm https://raw.githubusercontent.com/munim/tokscale-ui/main/scripts/install.ps1 | iex
+```
+
+You can also download `Tokscale UI_<version>_x64-setup.exe` directly from [GitHub Releases](../../releases).
+
+### Linux
+
+Recommended (`.AppImage` with automatic in-app self-updates and desktop entry):
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/munim/tokscale-ui/main/scripts/install.sh | sh
+```
+
+Or download `.AppImage` (requires FUSE: `libfuse2` / `libfuse2t64` on Ubuntu/Debian) or `.deb` (`sudo apt install ./tokscale-ui_*.deb`) from [GitHub Releases](../../releases).
+
+### Automatic Updates
+
+Tokscale UI checks GitHub Releases silently on startup and every 6 hours (verified via minisign, independent of OS code-signing). Self-updating installs (macOS `.app`, Windows NSIS per-user, Linux `.AppImage`) download and apply updates in-app. Read-only, Scoop, or `.deb` installs notify you with the exact upgrade command.
 
 ## Privacy
 

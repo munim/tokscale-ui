@@ -12,12 +12,13 @@ use crate::contracts::{
     ProviderActionRequest, ProvidersStatusPayload, RangePreset, SessionDetail,
     SessionTitlesUpdatedEvent, SessionsPayload, SessionsQuery, SettingsSection, SnapshotEvent,
     SocialActionRequest, SocialStatusPayload, SourceWarning, SyncMode, SyncProgressEvent,
-    SyncStatus, TokscaleSettingsPatch, TokscaleSettingsState, TraySnapshot,
+    SyncStatus, TokscaleSettingsPatch, TokscaleSettingsState, TraySnapshot, UpdateStatusPayload,
 };
 use crate::data::source::CliRunner;
 use crate::data::DataService;
 use crate::shell::dashboard::{plan_dashboard_open, take_pending_handoff, OpenAction};
 use crate::shell::prefs::{load_preferences, patch_preferences};
+use crate::shell::updater::UpdateService;
 use crate::shell::{ShellController, ShellHooks, ShellState, TraySnapshotLite};
 
 pub struct CliServiceRunner(pub Arc<CliService>);
@@ -54,6 +55,7 @@ pub struct AppState {
     pub shell: RwLock<Option<ShellController>>,
     pub sync_status: Arc<RwLock<SyncStatus>>,
     pub sync_inflight: Arc<tokio::sync::Mutex<()>>,
+    pub updater: Arc<UpdateService>,
 }
 
 impl Default for AppState {
@@ -90,6 +92,7 @@ impl AppState {
             shell: RwLock::new(None),
             sync_status: Arc::new(RwLock::new(SyncStatus::default())),
             sync_inflight: Arc::new(tokio::sync::Mutex::new(())),
+            updater: Arc::new(UpdateService::new()),
         }
     }
 
@@ -648,6 +651,41 @@ pub fn setup_app(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>>
                 });
             }
         })),
+        on_update_check: Some(Arc::new({
+            let handle = app_handle.clone();
+            move || {
+                let h = handle.clone();
+                tauri::async_runtime::spawn(async move {
+                    let st = h.state::<AppState>();
+                    let prefs = st.get_preferences();
+                    if !prefs.auto_check_updates {
+                        return;
+                    }
+                    let ctrl = st
+                        .shell
+                        .read()
+                        .unwrap_or_else(|e| e.into_inner())
+                        .clone();
+                    let _ = st.updater.check(&h, false, &prefs, ctrl.as_ref()).await;
+                });
+            }
+        })),
+        on_check_updates_requested: Some(Arc::new({
+            let handle = app_handle.clone();
+            move || {
+                let h = handle.clone();
+                tauri::async_runtime::spawn(async move {
+                    let st = h.state::<AppState>();
+                    let prefs = st.get_preferences();
+                    let ctrl = st
+                        .shell
+                        .read()
+                        .unwrap_or_else(|e| e.into_inner())
+                        .clone();
+                    let _ = st.updater.check(&h, true, &prefs, ctrl.as_ref()).await;
+                });
+            }
+        })),
         on_range_changed: Some(Arc::new({
             let handle = app_handle.clone();
             move |next_range| {
@@ -684,7 +722,7 @@ pub fn setup_app(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>>
 
     // Steps 4 & 5: Background CLI resolution, local offline sync when cache is missing/stale, and watcher paths
     let fallback_required = hydrate_report.fallback_required;
-    let startup_handle = app_handle;
+    let startup_handle = app_handle.clone();
     tauri::async_runtime::spawn(async move {
         let st = startup_handle.state::<AppState>();
         let cli_info = st.data.refresh_cli_info().await;
@@ -718,6 +756,29 @@ pub fn setup_app(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>>
         {
             ctrl.set_watch_paths(watch_paths);
         };
+    });
+
+    // Step 6: Delayed background update check (25s after launch so startup hydration stays <5ms)
+    let update_handle = app_handle;
+    tauri::async_runtime::spawn(async move {
+        tokio::time::sleep(std::time::Duration::from_secs(25)).await;
+        let st = update_handle.state::<AppState>();
+        let prefs = st.get_preferences();
+        if !prefs.auto_check_updates {
+            return;
+        }
+        let ctrl = st
+            .shell
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone();
+        if ctrl.as_ref().is_some_and(|c| !c.is_tray_alive()) {
+            return;
+        }
+        let _ = st
+            .updater
+            .check(&update_handle, false, &prefs, ctrl.as_ref())
+            .await;
     });
 
     Ok(())
@@ -1145,6 +1206,90 @@ pub async fn pick_path(app: AppHandle, kind: String) -> Result<Option<String>, S
             .map_err(|err| format!("Invalid selected path: {err}")),
         None => Ok(None),
     }
+}
+
+#[tauri::command]
+pub async fn get_update_status(state: State<'_, AppState>) -> Result<UpdateStatusPayload, String> {
+    Ok(state.updater.status())
+}
+
+#[tauri::command]
+pub async fn check_for_updates(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    manual: Option<bool>,
+) -> Result<UpdateStatusPayload, String> {
+    let prefs = state.get_preferences();
+    let ctrl = state
+        .shell
+        .read()
+        .unwrap_or_else(|e| e.into_inner())
+        .clone();
+    state
+        .updater
+        .check(&app, manual.unwrap_or(true), &prefs, ctrl.as_ref())
+        .await
+}
+
+#[tauri::command]
+pub async fn download_and_install_update(
+    app: AppHandle,
+    state: State<'_, AppState>,
+) -> Result<UpdateStatusPayload, String> {
+    let ctrl = state
+        .shell
+        .read()
+        .unwrap_or_else(|e| e.into_inner())
+        .clone();
+    let shutdown_ctrl = ctrl.clone();
+    state
+        .updater
+        .download_and_install(&app, ctrl.as_ref(), move || {
+            if let Some(c) = shutdown_ctrl {
+                c.shutdown();
+            }
+        })
+        .await
+}
+
+#[tauri::command]
+pub async fn restart_to_apply_update(
+    app: AppHandle,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    let ctrl = state
+        .shell
+        .read()
+        .unwrap_or_else(|e| e.into_inner())
+        .clone();
+    state.updater.restart_to_apply(&app, move || {
+        if let Some(c) = ctrl {
+            c.shutdown();
+        }
+    });
+}
+
+#[tauri::command]
+pub async fn skip_update_version(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    version: String,
+) -> Result<UpdateStatusPayload, String> {
+    let trimmed = version.trim().to_string();
+    if trimmed.is_empty() {
+        return Err("Version cannot be empty".to_string());
+    }
+    state.update_preferences(serde_json::json!({
+        "skippedUpdateVersion": trimmed,
+    }))?;
+    let ctrl = state
+        .shell
+        .read()
+        .unwrap_or_else(|e| e.into_inner())
+        .clone();
+    Ok(state
+        .updater
+        .clear_for_skipped_version(&app, &trimmed, ctrl.as_ref()))
 }
 
 async fn refresh_quota_and_notify(app: &AppHandle<Wry>, state: &AppState) {

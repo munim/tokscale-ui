@@ -12,6 +12,7 @@
   import StateBanner from './components/StateBanner.svelte';
   import TopModels from './components/TopModels.svelte';
   import TrayHeader from './components/TrayHeader.svelte';
+  import UpdateBanner from './components/UpdateBanner.svelte';
   import { createTrayStore } from './store.svelte';
 
   const store = createTrayStore();
@@ -80,6 +81,14 @@
     onsync={() => void store.triggerSync('full_manual')}
     onopensettings={() => store.openSettings()}
     bind:firstActionEl
+  />
+
+  <UpdateBanner
+    update={store.visibleUpdate}
+    onupdate={() => void store.downloadAndInstallUpdate()}
+    onrestart={() => void store.restartToApplyUpdate()}
+    ondetails={() => store.openSettings('app')}
+    ondismiss={store.dismissUpdateBanner}
   />
 
   <StateBanner

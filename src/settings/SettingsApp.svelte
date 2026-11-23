@@ -156,7 +156,9 @@
               <span class="settings-nav-label">{item.label}</span>
             </span>
 
-            {#if item.id === 'sources'}
+            {#if item.id === 'app' && store.hasAvailableUpdate}
+              <span class="settings-nav-dot" aria-label="Update available"></span>
+            {:else if item.id === 'sources'}
               <span class="settings-nav-badge">
                 <span
                   class="settings-nav-dot"
@@ -179,15 +181,28 @@
     </nav>
 
     <footer class="settings-sidebar-footer">
-      <div class="settings-cli-pill">
-        <span
-          class="settings-cli-dot"
-          class:is-ok={Boolean(store.cliInfo && store.cliInfo.resolvedVia !== 'none')}
-          aria-hidden="true"
-        ></span>
-        <span class="settings-cli-ver">
-          {store.cliInfo?.version ? `v${store.cliInfo.version}` : 'CLI not found'}
-        </span>
+      <div class="settings-footer-left">
+        <button
+          type="button"
+          class="settings-ui-ver-btn"
+          title="App version and updates"
+          onclick={() => store.setSection('app', 'updates')}
+        >
+          {#if store.hasAvailableUpdate}
+            <span class="settings-nav-dot" aria-hidden="true"></span>
+          {/if}
+          <span>UI v{store.updateStatus?.currentVersion ?? '0.1.0'}</span>
+        </button>
+        <div class="settings-cli-pill">
+          <span
+            class="settings-cli-dot"
+            class:is-ok={Boolean(store.cliInfo && store.cliInfo.resolvedVia !== 'none')}
+            aria-hidden="true"
+          ></span>
+          <span class="settings-cli-ver">
+            {store.cliInfo?.version ? `CLI v${store.cliInfo.version}` : 'CLI not found'}
+          </span>
+        </div>
       </div>
       {#if store.cliInfo?.resolvedVia && store.cliInfo.resolvedVia !== 'none'}
         <span class="settings-cli-via">{store.cliInfo.resolvedVia}</span>

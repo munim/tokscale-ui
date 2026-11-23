@@ -332,6 +332,33 @@ body,
   color: var(--muted);
 }
 
+.settings-footer-left {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.settings-ui-ver-btn {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--muted);
+  cursor: pointer;
+  text-align: left;
+}
+
+.settings-ui-ver-btn:hover {
+  color: var(--fg);
+}
+
 /* Main Right Column */
 .settings-main {
   display: flex;
@@ -929,6 +956,35 @@ body,
   width: 14px;
   height: 14px;
   margin: 0;
+}
+
+.s-update-progress-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.s-update-progress-meta {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 12px;
+  color: var(--fg);
+}
+
+.s-update-progress-bar {
+  width: 100%;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--fg-soft);
+  overflow: hidden;
+}
+
+.s-update-progress-fill {
+  height: 100%;
+  border-radius: 999px;
+  background: var(--accent);
+  transition: width 140ms ease;
 }
 
 @media (prefers-reduced-motion: reduce) {

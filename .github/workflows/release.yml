@@ -34,6 +34,28 @@ jobs:
             args: ""
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Prepare release notes
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG="${GITHUB_REF_NAME}"
+          PREV_TAG="$(git describe --tags --abbrev=0 "${TAG}^" 2>/dev/null || true)"
+          if [ -n "$PREV_TAG" ]; then
+            NOTES="$(git log "${PREV_TAG}..${TAG}" --no-merges --pretty=format:"- %s" | head -n 40)"
+          else
+            NOTES="$(git log "${TAG}" --no-merges --pretty=format:"- %s" -n 20)"
+          fi
+          if [ -z "$NOTES" ]; then
+            NOTES="See the assets to download and install this version."
+          fi
+          {
+            echo "RELEASE_BODY<<__TOKSCALE_RELEASE_EOF__"
+            printf '%s\n' "$NOTES"
+            echo "__TOKSCALE_RELEASE_EOF__"
+          } >> "$GITHUB_ENV"
 
       - name: Install Linux dependencies
         if: matrix.platform == 'ubuntu-22.04'
@@ -68,12 +90,17 @@ jobs:
         with:
           tagName: v__VERSION__
           releaseName: Tokscale UI v__VERSION__
-          releaseBody: See the assets to download and install this version.
+          releaseBody: ${{ env.RELEASE_BODY }}
           releaseDraft: false
           prerelease: false
           includeUpdaterJson: true
           retryAttempts: 3
           args: ${{ matrix.args }}
+
+      - name: Verify macOS ad-hoc bundle signature
+        if: matrix.platform == 'macos-latest'
+        run: |
+          codesign --verify --deep --strict "src-tauri/target/${{ matrix.rust_target }}/release/bundle/macos/Tokscale UI.app"
 
   verify-release:
     name: Verify Updater Manifest (latest.json)
@@ -110,3 +137,133 @@ jobs:
           done
 
           echo "Verified latest.json contains all 4 required platform entries."
+
+      - name: Generate and upload SHA256SUMS.txt
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          TAG="v$(jq -r '.version' src-tauri/tauri.conf.json)"
+          mkdir -p checksum-assets
+          gh release download "$TAG" --repo "${GITHUB_REPOSITORY}" --dir checksum-assets --clobber
+          (
+            cd checksum-assets
+            rm -f latest.json SHA256SUMS.txt *.sig
+            sha256sum * > ../SHA256SUMS.txt
+          )
+          gh release upload "$TAG" SHA256SUMS.txt --repo "${GITHUB_REPOSITORY}" --clobber
+          cat SHA256SUMS.txt
+
+  publish-package-managers:
+    name: Update Homebrew Tap & Scoop Bucket
+    needs: verify-release
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Update Homebrew tap cask (optional)
+        env:
+          TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          TAP_REPO: ${{ vars.HOMEBREW_TAP_REPO || 'munim/homebrew-tap' }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        if: env.TAP_TOKEN != ''
+        run: |
+          set -euo pipefail
+          VERSION="$(jq -r '.version' src-tauri/tauri.conf.json)"
+          TAG="v${VERSION}"
+          gh release download "$TAG" --repo "${GITHUB_REPOSITORY}" --pattern "SHA256SUMS.txt" --clobber
+          ARM_SHA="$(awk '/aarch64.*\.dmg$/ {print $1; exit}' SHA256SUMS.txt)"
+          INTEL_SHA="$(awk '/x64.*\.dmg$/ {print $1; exit}' SHA256SUMS.txt)"
+          ARM_FILE="$(awk '/aarch64.*\.dmg$/ {print $2; exit}' SHA256SUMS.txt)"
+          INTEL_FILE="$(awk '/x64.*\.dmg$/ {print $2; exit}' SHA256SUMS.txt)"
+          if [ -z "$ARM_SHA" ] || [ -z "$INTEL_SHA" ]; then
+            echo "Could not locate macOS DMG checksums in SHA256SUMS.txt"
+            exit 1
+          fi
+          git clone "https://x-access-token:${TAP_TOKEN}@github.com/${TAP_REPO}.git" tap-repo
+          mkdir -p tap-repo/Casks
+          cat > tap-repo/Casks/tokscale-ui.rb <<EOF
+cask "tokscale-ui" do
+  arch arm: "${ARM_FILE}", intel: "${INTEL_FILE}"
+
+  version "${VERSION}"
+  sha256 arm:   "${ARM_SHA}",
+         intel: "${INTEL_SHA}"
+
+  url "https://github.com/${GITHUB_REPOSITORY}/releases/download/v#{version}/#{arch}"
+  name "Tokscale UI"
+  desc "Desktop and menubar companion for tokscale"
+  homepage "https://github.com/${GITHUB_REPOSITORY}"
+
+  auto_updates true
+  depends_on macos: ">= :big_sur"
+
+  app "Tokscale UI.app"
+
+  postflight_steps do
+    run "/usr/bin/xattr",
+        args:           ["-dr", "com.apple.quarantine", "{{appdir}}/Tokscale UI.app"],
+        writable_paths: ["{{appdir}}/Tokscale UI.app"]
+  end
+end
+EOF
+          cd tap-repo
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Casks/tokscale-ui.rb
+          if ! git diff --cached --quiet; then
+            git commit -m "chore(cask): bump tokscale-ui to ${VERSION}"
+            git push
+          fi
+
+      - name: Update Scoop bucket manifest (optional)
+        env:
+          BUCKET_TOKEN: ${{ secrets.SCOOP_BUCKET_TOKEN }}
+          BUCKET_REPO: ${{ vars.SCOOP_BUCKET_REPO || 'munim/scoop-bucket' }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        if: env.BUCKET_TOKEN != ''
+        run: |
+          set -euo pipefail
+          VERSION="$(jq -r '.version' src-tauri/tauri.conf.json)"
+          TAG="v${VERSION}"
+          gh release download "$TAG" --repo "${GITHUB_REPOSITORY}" --pattern "SHA256SUMS.txt" --clobber
+          WIN_SHA="$(awk '/-setup\.exe$/ {print $1; exit}' SHA256SUMS.txt)"
+          WIN_FILE="$(awk '/-setup\.exe$/ {print $2; exit}' SHA256SUMS.txt)"
+          if [ -z "$WIN_SHA" ] || [ -z "$WIN_FILE" ]; then
+            echo "Could not locate Windows setup.exe checksum in SHA256SUMS.txt"
+            exit 1
+          fi
+          git clone "https://x-access-token:${BUCKET_TOKEN}@github.com/${BUCKET_REPO}.git" bucket-repo
+          mkdir -p bucket-repo/bucket
+          jq -n \
+            --arg version "$VERSION" \
+            --arg url "https://github.com/${GITHUB_REPOSITORY}/releases/download/v${VERSION}/${WIN_FILE}" \
+            --arg hash "$WIN_SHA" \
+            --arg repo "${GITHUB_REPOSITORY}" \
+            '{
+              version: $version,
+              description: "Desktop and menubar companion for tokscale",
+              homepage: ("https://github.com/" + $repo),
+              license: "MIT",
+              architecture: {
+                "64bit": {
+                  url: $url,
+                  hash: $hash
+                }
+              },
+              installer: {
+                script: "Start-Process -Wait -FilePath \"$dir\\$fname\" -ArgumentList \"/S\",\"/D=$dir\""
+              },
+              uninstaller: {
+                script: "if (Test-Path \"$dir\\uninstall.exe\") { Start-Process -Wait -FilePath \"$dir\\uninstall.exe\" -ArgumentList \"/S\" }"
+              },
+              bin: "Tokscale UI.exe"
+            }' > bucket-repo/bucket/tokscale-ui.json
+          cd bucket-repo
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add bucket/tokscale-ui.json
+          if ! git diff --cached --quiet; then
+            git commit -m "chore(scoop): bump tokscale-ui to ${VERSION}"
+            git push
+          fi

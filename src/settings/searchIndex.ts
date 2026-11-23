@@ -19,8 +19,8 @@ export const SETTINGS_NAV: readonly SettingsNavItem[] = [
   {
     id: 'app',
     label: 'App & Alerts',
-    subtitle: 'Menubar readout, theme, shortcuts, notifications, and daily budgets.',
-    keywords: ['general', 'appearance', 'theme', 'dark', 'light', 'menubar', 'tray', 'shortcut', 'hotkey', 'launch', 'login', 'alerts', 'budget', 'quota', 'notifications', 'titles', 'summarizer'],
+    subtitle: 'Menubar readout, theme, shortcuts, notifications, budgets, and updates.',
+    keywords: ['general', 'appearance', 'theme', 'dark', 'light', 'menubar', 'tray', 'shortcut', 'hotkey', 'launch', 'login', 'alerts', 'budget', 'quota', 'notifications', 'titles', 'summarizer', 'update', 'updates', 'version', 'about', 'upgrade'],
   },
   {
     id: 'sources',
@@ -61,6 +61,7 @@ export const SEARCHABLE_SETTINGS: readonly SearchableSetting[] = [
   { id: 'shortcut', section: 'app', label: 'Global shortcut', description: 'Keyboard shortcut to toggle the menubar popover', keywords: ['hotkey', 'keybind', 'recorder'] },
   { id: 'titles', section: 'app', label: 'Session title enrichment', description: 'Free local on-device summarizer for recent sessions', keywords: ['summarizer', 'report', 'apple'] },
   { id: 'notifications', section: 'app', label: 'Quota & budget alerts', description: 'Desktop notifications when near quota or daily budget', keywords: ['notify', 'threshold', 'percent', 'budget', 'usd', 'spend'] },
+  { id: 'updates', section: 'app', label: 'App updates & version', description: 'Automatic update checks, release notes, and current app version', keywords: ['update', 'updates', 'version', 'about', 'upgrade', 'release', 'restart'] },
   { id: 'sources-health', section: 'sources', label: 'Detected local harnesses', description: 'Scan path health, message counts, and per-client retry', keywords: ['clients', 'scan', 'retry', 'detected'] },
   { id: 'default-clients', section: 'sources', label: 'Default clients filter', description: 'Default client IDs applied by tokscale CLI', keywords: ['defaultClients', 'filter'] },
   { id: 'extra-paths', section: 'sources', label: 'Extra scan paths', description: 'Additional per-client directories for session logs', keywords: ['extraScanPaths', 'folders', 'codex', 'hermes'] },

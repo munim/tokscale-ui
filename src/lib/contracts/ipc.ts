@@ -11,6 +11,7 @@ import {
   mockSocialStatus,
   mockTokscaleSettings,
   mockTraySnapshot,
+  mockUpdateStatus,
 } from './mocks';
 
 export type RangePreset = 'today' | '7d' | '30d' | 'all' | 'custom';
@@ -65,6 +66,8 @@ export interface CompanionPreferences {
   dailyBudgetUsd?: number;
   sessionTitleEnrichment: boolean;
   customTokscalePath?: string;
+  autoCheckUpdates: boolean;
+  skippedUpdateVersion?: string;
 }
 export interface CliResolutionInfo {
   resolvedVia: string;
@@ -252,6 +255,33 @@ export interface AutosubmitConfigRequest {
   range?: string;
 }
 
+export type UpdatePhase =
+  | 'idle'
+  | 'checking'
+  | 'upToDate'
+  | 'available'
+  | 'downloading'
+  | 'ready'
+  | 'error';
+
+export type UpdateCapability = 'selfUpdate' | 'notifyOnly';
+
+export interface UpdateStatusPayload {
+  currentVersion: string;
+  phase: UpdatePhase;
+  capability: UpdateCapability;
+  installMethod: string;
+  availableVersion?: string;
+  releaseNotes?: string;
+  pubDate?: string;
+  downloadedBytes?: number;
+  totalBytes?: number;
+  error?: string;
+  lastCheckedAt?: number;
+  fallbackHint?: string;
+  releaseUrl?: string;
+}
+
 export interface DashboardSources {
   headlessRoots: string[];
   note: string;
@@ -290,6 +320,11 @@ export const COMMANDS = {
   configureAutosubmit: 'configure_autosubmit',
   revealConfigPath: 'reveal_config_path',
   pickPath: 'pick_path',
+  getUpdateStatus: 'get_update_status',
+  checkForUpdates: 'check_for_updates',
+  downloadAndInstallUpdate: 'download_and_install_update',
+  restartToApplyUpdate: 'restart_to_apply_update',
+  skipUpdateVersion: 'skip_update_version',
 } as const;
 
 export const EVENTS = {
@@ -299,6 +334,7 @@ export const EVENTS = {
   sessionTitlesUpdated: 'tokscale://session-titles-updated',
   preferencesUpdated: 'tokscale://preferences-updated',
   settingsNavigate: 'tokscale://settings-navigate',
+  updateStatus: 'tokscale://update-status',
 } as const;
 
 export interface HarnessSeriesItem {
@@ -511,6 +547,14 @@ let mockTokscaleSettingsState: TokscaleSettingsState | null = null;
 let mockCustomPricingState: CustomPricingState | null = null;
 let mockProvidersState: ProvidersStatusPayload | null = null;
 let mockSocialState: SocialStatusPayload | null = null;
+let mockUpdateState: UpdateStatusPayload | null = null;
+
+function getMockUpdateState(): UpdateStatusPayload {
+  if (!mockUpdateState) {
+    mockUpdateState = mockUpdateStatus();
+  }
+  return mockUpdateState;
+}
 
 function getMockPreferencesState(): CompanionPreferences {
   if (!mockPrefsState) {
@@ -862,6 +906,73 @@ export const ipc = {
     }
     return invoke<string | null>(COMMANDS.pickPath, { kind });
   },
+
+  async getUpdateStatus(): Promise<UpdateStatusPayload> {
+    if (isMockMode()) {
+      return { ...getMockUpdateState() };
+    }
+    return invoke<UpdateStatusPayload>(COMMANDS.getUpdateStatus);
+  },
+
+  async checkForUpdates(manual = true): Promise<UpdateStatusPayload> {
+    if (isMockMode()) {
+      const current = getMockUpdateState();
+      mockUpdateState = {
+        ...current,
+        phase: manual ? 'upToDate' : 'idle',
+        lastCheckedAt: Math.floor(Date.now() / 1000),
+        error: undefined,
+      };
+      return { ...mockUpdateState };
+    }
+    return invoke<UpdateStatusPayload>(COMMANDS.checkForUpdates, { manual });
+  },
+
+  async downloadAndInstallUpdate(): Promise<UpdateStatusPayload> {
+    if (isMockMode()) {
+      const current = getMockUpdateState();
+      mockUpdateState = {
+        ...current,
+        phase: 'ready',
+        downloadedBytes: 12_400_000,
+        totalBytes: 12_400_000,
+        error: undefined,
+      };
+      return { ...mockUpdateState };
+    }
+    return invoke<UpdateStatusPayload>(COMMANDS.downloadAndInstallUpdate);
+  },
+
+  async restartToApplyUpdate(): Promise<void> {
+    if (isMockMode()) {
+      const current = getMockUpdateState();
+      mockUpdateState = {
+        ...current,
+        currentVersion: current.availableVersion ?? current.currentVersion,
+        phase: 'idle',
+        availableVersion: undefined,
+        releaseNotes: undefined,
+        downloadedBytes: undefined,
+        totalBytes: undefined,
+      };
+      return;
+    }
+    await invoke<void>(COMMANDS.restartToApplyUpdate);
+  },
+
+  async skipUpdateVersion(version: string): Promise<UpdateStatusPayload> {
+    if (isMockMode()) {
+      mockPrefsState = { ...getMockPreferencesState(), skippedUpdateVersion: version };
+      const current = getMockUpdateState();
+      mockUpdateState = {
+        ...current,
+        phase: current.availableVersion === version ? 'idle' : current.phase,
+        availableVersion: current.availableVersion === version ? undefined : current.availableVersion,
+      };
+      return { ...mockUpdateState };
+    }
+    return invoke<UpdateStatusPayload>(COMMANDS.skipUpdateVersion, { version });
+  },
 };
 
 export async function onEvent<T>(eventName: string, handler: (payload: T) => void): Promise<UnlistenFn> {
@@ -901,4 +1012,10 @@ export function onSettingsNavigate(
   handler: (payload: SettingsNavigateEvent) => void,
 ): Promise<UnlistenFn> {
   return onEvent<SettingsNavigateEvent>(EVENTS.settingsNavigate, handler);
+}
+
+export function onUpdateStatus(
+  handler: (payload: UpdateStatusPayload) => void,
+): Promise<UnlistenFn> {
+  return onEvent<UpdateStatusPayload>(EVENTS.updateStatus, handler);
 }

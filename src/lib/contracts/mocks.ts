@@ -1098,6 +1098,7 @@ export function mockPreferences(): CompanionPreferences {
     notificationsEnabled: false,
     quotaAlertPercent: 85,
     sessionTitleEnrichment: true,
+    autoCheckUpdates: true,
   };
 }
 
@@ -1268,5 +1269,15 @@ export function mockSocialStatus(): import('./ipc').SocialStatusPayload {
       week: false,
       month: false,
     },
+  };
+}
+
+export function mockUpdateStatus(): import('./ipc').UpdateStatusPayload {
+  return {
+    currentVersion: '0.1.0',
+    phase: 'idle',
+    capability: 'selfUpdate',
+    installMethod: 'macos-bundle',
+    releaseUrl: 'https://github.com/munim/tokscale-ui/releases/latest',
   };
 }

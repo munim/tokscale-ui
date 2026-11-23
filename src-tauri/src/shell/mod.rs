@@ -9,6 +9,7 @@ pub mod settings;
 pub mod shortcut;
 pub mod timers;
 pub mod tray;
+pub mod updater;
 
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, RwLock, RwLockReadGuard, RwLockWriteGuard};
@@ -88,6 +89,8 @@ impl From<&TraySnapshot> for TraySnapshotLite {
 pub struct ShellHooks {
     pub on_sync_requested: Option<Arc<dyn Fn(SyncMode) + Send + Sync>>,
     pub on_quota_refresh: Option<Arc<dyn Fn() + Send + Sync>>,
+    pub on_update_check: Option<Arc<dyn Fn() + Send + Sync>>,
+    pub on_check_updates_requested: Option<Arc<dyn Fn() + Send + Sync>>,
     pub on_range_changed: Option<Arc<dyn Fn(RangePreset) + Send + Sync>>,
     pub on_quit_requested: Option<Arc<dyn Fn() + Send + Sync>>,
 }
@@ -251,6 +254,10 @@ impl ShellController {
 
         self.inner.tray.apply_readout(&display_mode, snapshot);
         self.inner.tray.sync_range_checks(snapshot.range);
+    }
+
+    pub fn set_update_menu_label(&self, label: &str) {
+        self.inner.tray.set_update_menu_label(label);
     }
 
     pub fn evaluate_notifications(&self, today_cost: f64, usage: &[ProviderUsageView]) {

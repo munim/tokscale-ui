@@ -12,6 +12,7 @@ pub const WATCHER_DEBOUNCE: Duration = Duration::from_secs(5);
 pub const WATCHER_COOLDOWN: Duration = Duration::from_secs(30);
 pub const OFFLINE_REFRESH_INTERVAL: Duration = Duration::from_secs(5 * 60);
 pub const QUOTA_REFRESH_INTERVAL: Duration = Duration::from_secs(30 * 60);
+pub const UPDATE_CHECK_INTERVAL: Duration = Duration::from_secs(6 * 60 * 60);
 
 #[derive(Debug, Clone)]
 pub struct DebounceGate {
@@ -136,11 +137,24 @@ impl ShellTimers {
                 }
             }
         });
-        spawn_periodic_task(QUOTA_REFRESH_INTERVAL, shutdown_rx, move || {
+        spawn_periodic_task(QUOTA_REFRESH_INTERVAL, shutdown_rx.clone(), {
+            let hooks = Arc::clone(&hooks);
+            move || {
+                let cb = hooks
+                    .read()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .on_quota_refresh
+                    .clone();
+                if let Some(cb) = cb {
+                    cb();
+                }
+            }
+        });
+        spawn_periodic_task(UPDATE_CHECK_INTERVAL, shutdown_rx, move || {
             let cb = hooks
                 .read()
                 .unwrap_or_else(|e| e.into_inner())
-                .on_quota_refresh
+                .on_update_check
                 .clone();
             if let Some(cb) = cb {
                 cb();

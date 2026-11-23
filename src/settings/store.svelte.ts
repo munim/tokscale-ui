@@ -3,6 +3,7 @@ import {
   onPreferencesUpdated,
   onSettingsNavigate,
   onSnapshotUpdated,
+  onUpdateStatus,
   type AutosubmitConfigRequest,
   type CliActionResult,
   type CliInstallResult,
@@ -20,6 +21,7 @@ import {
   type TokscaleSettingsPatch,
   type TokscaleSettingsState,
   type UnlistenFn,
+  type UpdateStatusPayload,
 } from '$lib/contracts/ipc';
 import { applyTheme } from '$lib/state';
 
@@ -35,6 +37,7 @@ const DEFAULT_PREFS: CompanionPreferences = {
   notificationsEnabled: false,
   quotaAlertPercent: 85,
   sessionTitleEnrichment: true,
+  autoCheckUpdates: true,
 };
 
 export function createSettingsStore() {
@@ -49,6 +52,7 @@ export function createSettingsStore() {
   let customPricing = $state<CustomPricingState | null>(null);
   let providersStatus = $state<ProvidersStatusPayload | null>(null);
   let socialStatus = $state<SocialStatusPayload | null>(null);
+  let updateStatus = $state<UpdateStatusPayload | null>(null);
 
   let loadingCore = $state(true);
   let loadingProviders = $state(false);
@@ -102,13 +106,14 @@ export function createSettingsStore() {
   async function loadInitial(): Promise<void> {
     loadingCore = true;
     try {
-      const [pendingSection, prefs, cli, src, tsSettings, pricing] = await Promise.all([
+      const [pendingSection, prefs, cli, src, tsSettings, pricing, upd] = await Promise.all([
         ipc.takePendingSettingsSection().catch(() => null),
         ipc.getPreferences().catch(() => ({ ...DEFAULT_PREFS })),
         ipc.getCliInfo().catch(() => null),
         ipc.getSourcesHealth().catch(() => null),
         ipc.getTokscaleSettings().catch(() => null),
         ipc.getCustomPricing().catch(() => null),
+        ipc.getUpdateStatus().catch(() => null),
       ]);
 
       preferences = prefs;
@@ -117,6 +122,7 @@ export function createSettingsStore() {
       sources = src;
       tokscaleSettings = tsSettings;
       customPricing = pricing;
+      updateStatus = upd;
 
       if (pendingSection) {
         activeSection = pendingSection;
@@ -373,6 +379,53 @@ export function createSettingsStore() {
     }
   }
 
+  async function checkForUpdates(): Promise<void> {
+    try {
+      const next = await ipc.checkForUpdates(true);
+      updateStatus = next;
+      if (next.phase === 'upToDate') {
+        showToast('ok', `Tokscale UI v${next.currentVersion} is up to date`);
+      } else if (next.phase === 'available' && next.availableVersion) {
+        showToast('info', `Update v${next.availableVersion} available`);
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Update check failed';
+      showToast('danger', message, 4500);
+    }
+  }
+
+  async function downloadAndInstallUpdate(): Promise<void> {
+    try {
+      const next = await ipc.downloadAndInstallUpdate();
+      updateStatus = next;
+      if (next.phase === 'ready') {
+        showToast('ok', `v${next.availableVersion ?? ''} ready — restart to apply`, 4200);
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Update download failed';
+      showToast('danger', message, 4800);
+    }
+  }
+
+  async function restartToApplyUpdate(): Promise<void> {
+    try {
+      await ipc.restartToApplyUpdate();
+    } catch (err) {
+      showToast('danger', err instanceof Error ? err.message : 'Failed to restart app', 4200);
+    }
+  }
+
+  async function skipUpdateVersion(version: string): Promise<void> {
+    try {
+      const next = await ipc.skipUpdateVersion(version);
+      updateStatus = next;
+      preferences = { ...preferences, skippedUpdateVersion: version };
+      showToast('info', `Skipped v${version}`);
+    } catch (err) {
+      showToast('danger', err instanceof Error ? err.message : 'Failed to skip version', 4000);
+    }
+  }
+
   function init(): () => void {
     let disposed = false;
     const unlisteners: UnlistenFn[] = [];
@@ -408,6 +461,12 @@ export function createSettingsStore() {
       }),
     );
 
+    register(
+      onUpdateStatus((next) => {
+        updateStatus = next;
+      }),
+    );
+
     void loadInitial();
 
     return () => {
@@ -433,6 +492,16 @@ export function createSettingsStore() {
   let hasSourceWarnings = $derived(
     (sources?.clients ?? []).some((c) => c.status === 'danger' || Boolean(c.warning)),
   );
+
+  let hasAvailableUpdate = $derived.by(() => {
+    const status = updateStatus;
+    if (!status) return false;
+    if (status.phase === 'downloading' || status.phase === 'ready') return true;
+    if (status.phase === 'available') {
+      return status.availableVersion !== preferences.skippedUpdateVersion;
+    }
+    return false;
+  });
 
   return {
     get activeSection() {
@@ -464,6 +533,12 @@ export function createSettingsStore() {
     },
     get socialStatus() {
       return socialStatus;
+    },
+    get updateStatus() {
+      return updateStatus;
+    },
+    get hasAvailableUpdate() {
+      return hasAvailableUpdate;
     },
     get loadingCore() {
       return loadingCore;
@@ -533,6 +608,10 @@ export function createSettingsStore() {
     installOrUpgradeCli,
     pickPath,
     revealPath,
+    checkForUpdates,
+    downloadAndInstallUpdate,
+    restartToApplyUpdate,
+    skipUpdateVersion,
     showToast,
   };
 }

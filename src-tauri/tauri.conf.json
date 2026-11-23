@@ -36,7 +36,6 @@
     "targets": [
       "dmg",
       "app",
-      "msi",
       "nsis",
       "appimage",
       "deb"
@@ -53,6 +52,18 @@
     ],
     "macOS": {
       "minimumSystemVersion": "11.0"
+    },
+    "windows": {
+      "nsis": {
+        "installMode": "currentUser"
+      }
+    },
+    "linux": {
+      "deb": {
+        "depends": [
+          "libayatana-appindicator3-1"
+        ]
+      }
     }
   },
   "plugins": {
@@ -61,7 +72,7 @@
       "endpoints": [
         "https://github.com/munim/tokscale-ui/releases/latest/download/latest.json"
       ],
-      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDY0NENDRUIxMDQ3NEJGMjkKUldRcHYzUUVzYzVNWkVJUjgrNDFrN1pBMkkvUW5RRGF1UWFTRUpXbGpQbjhpNlZtY21JWUJiYWMK",
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDRFQjBBQTdEMkZCRkQwODQKUldTRTBMOHZmYXF3VHBlbGtGd015ZnNacUY4Mzd1Y3NZOUVUWUNqREJFTGF6eEdUbjRsdWRROE8K",
       "windows": {
         "installMode": "passive"
       }

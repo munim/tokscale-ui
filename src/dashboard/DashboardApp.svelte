@@ -163,5 +163,8 @@
     lastSyncedAt={router.lastSyncedAt}
     syncing={router.syncing}
     syncMessage={router.syncMessage}
+    updateStatus={router.updateStatus}
+    skippedUpdateVersion={router.skippedUpdateVersion}
+    onOpenUpdates={() => void ipc.openSettings('app')}
   />
 </div>

@@ -17,9 +17,15 @@ describe('frozen contracts and deterministic mocks', () => {
     expect(COMMANDS.openSettings).toBe('open_settings');
     expect(COMMANDS.getTokscaleSettings).toBe('get_tokscale_settings');
     expect(COMMANDS.exportJson).toBe('export_json');
+    expect(COMMANDS.getUpdateStatus).toBe('get_update_status');
+    expect(COMMANDS.checkForUpdates).toBe('check_for_updates');
+    expect(COMMANDS.downloadAndInstallUpdate).toBe('download_and_install_update');
+    expect(COMMANDS.restartToApplyUpdate).toBe('restart_to_apply_update');
+    expect(COMMANDS.skipUpdateVersion).toBe('skip_update_version');
     expect(EVENTS.snapshotUpdated).toBe('tokscale://snapshot-updated');
     expect(EVENTS.dashboardNavigate).toBe('tokscale://dashboard-navigate');
     expect(EVENTS.settingsNavigate).toBe('tokscale://settings-navigate');
+    expect(EVENTS.updateStatus).toBe('tokscale://update-status');
   });
 
   it('produces deterministic mock snapshots across repeated calls', () => {
@@ -94,6 +100,11 @@ describe('frozen contracts and deterministic mocks', () => {
 
     const cli = await ipc.getCliInfo();
     expect(cli).toEqual(mockCliInfo());
+
+    const upd = await ipc.getUpdateStatus();
+    expect(upd.phase).toBe('idle');
+    const checked = await ipc.checkForUpdates(true);
+    expect(checked.phase).toBe('upToDate');
 
     await expect(ipc.resizeTray(420)).resolves.toBeUndefined();
   });

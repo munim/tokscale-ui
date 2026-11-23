@@ -2,7 +2,9 @@ use std::path::PathBuf;
 use std::sync::{Arc, RwLock};
 
 use tauri::image::Image;
-use tauri::menu::{CheckMenuItem, CheckMenuItemBuilder, MenuBuilder, MenuItemBuilder, SubmenuBuilder};
+use tauri::menu::{
+    CheckMenuItem, CheckMenuItemBuilder, MenuBuilder, MenuItem, MenuItemBuilder, SubmenuBuilder,
+};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIcon, TrayIconBuilder, TrayIconEvent};
 use tauri::{AppHandle, Manager, Wry};
 
@@ -16,6 +18,7 @@ pub const TRAY_ICON_ID: &str = "tokscale-tray";
 
 pub const MENU_OPEN_DASHBOARD: &str = "tray:open-dashboard";
 pub const MENU_OPEN_SETTINGS: &str = "tray:open-settings";
+pub const MENU_CHECK_UPDATES: &str = "tray:check-updates";
 pub const MENU_SYNC_NOW: &str = "tray:sync-now";
 pub const MENU_RANGE_TODAY: &str = "tray:range-today";
 pub const MENU_RANGE_7D: &str = "tray:range-7d";
@@ -28,6 +31,7 @@ const FALLBACK_ICON_PNG: &[u8] = include_bytes!("../../icons/32x32.png");
 #[derive(Clone)]
 pub struct TrayHandle {
     icon: TrayIcon<Wry>,
+    check_updates_item: MenuItem<Wry>,
     range_today: CheckMenuItem<Wry>,
     range_7d: CheckMenuItem<Wry>,
     range_30d: CheckMenuItem<Wry>,
@@ -35,6 +39,10 @@ pub struct TrayHandle {
 }
 
 impl TrayHandle {
+    pub fn set_update_menu_label(&self, label: &str) {
+        let _ = self.check_updates_item.set_text(label);
+    }
+
     pub fn apply_readout(&self, display_mode: &str, snapshot: &TraySnapshotLite) {
         let tooltip = format_windows_tooltip(snapshot.today_cost, snapshot.today_tokens);
         let _ = self.icon.set_tooltip(Some(tooltip));
@@ -219,6 +227,8 @@ pub fn setup_tray(
         MenuItemBuilder::with_id(MENU_OPEN_DASHBOARD, "Open dashboard").build(app)?;
     let open_settings_item =
         MenuItemBuilder::with_id(MENU_OPEN_SETTINGS, "Settings…").build(app)?;
+    let check_updates_item =
+        MenuItemBuilder::with_id(MENU_CHECK_UPDATES, "Check for Updates…").build(app)?;
     let sync_now_item = MenuItemBuilder::with_id(MENU_SYNC_NOW, "Sync now").build(app)?;
 
     let range_today = CheckMenuItemBuilder::with_id(MENU_RANGE_TODAY, "Today")
@@ -246,6 +256,7 @@ pub fn setup_tray(
     let menu = MenuBuilder::new(app)
         .item(&open_dashboard_item)
         .item(&open_settings_item)
+        .item(&check_updates_item)
         .item(&sync_now_item)
         .item(&range_submenu)
         .separator()
@@ -289,6 +300,18 @@ pub fn setup_tray(
             MENU_OPEN_SETTINGS => {
                 popover::dismiss_popover(app, &menu_state);
                 let _ = settings::open_settings(app, &menu_state, SettingsSection::App);
+            }
+            MENU_CHECK_UPDATES => {
+                popover::dismiss_popover(app, &menu_state);
+                let _ = settings::open_settings(app, &menu_state, SettingsSection::App);
+                let cb = menu_hooks
+                    .read()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .on_check_updates_requested
+                    .clone();
+                if let Some(cb) = cb {
+                    cb();
+                }
             }
             MENU_SYNC_NOW => {
                 let cb = menu_hooks
@@ -360,6 +383,7 @@ pub fn setup_tray(
     let icon = builder.build(app)?;
     let handle = TrayHandle {
         icon,
+        check_updates_item,
         range_today,
         range_7d,
         range_30d,

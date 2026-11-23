@@ -1196,6 +1196,30 @@ body,
   white-space: nowrap;
 }
 
+.status-update-pill {
+  appearance: none;
+  border: 1px solid color-mix(in oklch, var(--accent) 40%, var(--border));
+  background: color-mix(in oklch, var(--accent) 12%, transparent);
+  color: var(--accent-strong);
+  border-radius: 999px;
+  padding: 1px 8px;
+  font-family: var(--font-body);
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.status-update-pill:hover {
+  background: color-mix(in oklch, var(--accent) 20%, transparent);
+}
+
+.status-update-pill.is-ready {
+  border-color: color-mix(in oklch, var(--ok) 45%, var(--border));
+  background: color-mix(in oklch, var(--ok) 15%, transparent);
+  color: var(--ok-ink);
+}
+
 @media (prefers-reduced-motion: reduce) {
   .app-btn-refresh.is-syncing .app-refresh-icon,
   .status-syncing-dot {

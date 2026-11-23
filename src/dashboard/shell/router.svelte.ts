@@ -4,6 +4,7 @@ import {
   onPreferencesUpdated,
   onSnapshotUpdated,
   onSyncProgress,
+  onUpdateStatus,
   type CompanionPreferences,
   type DashboardNavigateEvent,
   type DashboardQuery,
@@ -15,6 +16,7 @@ import {
   type SyncProgressEvent,
   type SyncStatus,
   type UnlistenFn,
+  type UpdateStatusPayload,
 } from '$lib/contracts/ipc';
 import { addDays, localDateKey } from '$lib/format/date';
 import { applyTheme, type ThemeMode } from '$lib/state/theme.svelte';
@@ -48,6 +50,8 @@ export interface DashboardRouterDeps {
   onSnapshotUpdated: (handler: (payload: SnapshotEvent) => void) => Promise<UnlistenFn>;
   onSyncProgress: (handler: (payload: SyncProgressEvent) => void) => Promise<UnlistenFn>;
   onPreferencesUpdated: (handler: (payload: CompanionPreferences) => void) => Promise<UnlistenFn>;
+  getUpdateStatus?: () => Promise<UpdateStatusPayload>;
+  onUpdateStatus?: (handler: (payload: UpdateStatusPayload) => void) => Promise<UnlistenFn>;
   applyTheme: (mode: ThemeMode) => void;
 }
 
@@ -60,6 +64,8 @@ const defaultDeps: DashboardRouterDeps = {
   onSnapshotUpdated,
   onSyncProgress,
   onPreferencesUpdated,
+  getUpdateStatus: () => ipc.getUpdateStatus(),
+  onUpdateStatus,
   applyTheme,
 };
 
@@ -97,6 +103,8 @@ export class DashboardRouter {
   syncMessage = $state('');
   lastSyncedAt = $state<number | undefined>(undefined);
   error = $state<string | null>(null);
+  updateStatus = $state<UpdateStatusPayload | null>(null);
+  skippedUpdateVersion = $state<string | undefined>(undefined);
 
   private readonly deps: DashboardRouterDeps;
   private searchTimer: ReturnType<typeof setTimeout> | null = null;
@@ -356,14 +364,35 @@ export class DashboardRouter {
     register(
       this.deps.onPreferencesUpdated((prefs) => {
         this.deps.applyTheme(normalizeThemeMode(prefs.theme));
+        this.skippedUpdateVersion = prefs.skippedUpdateVersion;
       }),
     );
+
+    if (this.deps.onUpdateStatus) {
+      register(
+        this.deps.onUpdateStatus((status) => {
+          this.updateStatus = status;
+        }),
+      );
+    }
 
     void this.deps.getPreferences().then((prefs) => {
       if (!disposed) {
         this.deps.applyTheme(normalizeThemeMode(prefs.theme));
+        this.skippedUpdateVersion = prefs.skippedUpdateVersion;
       }
     });
+
+    if (this.deps.getUpdateStatus) {
+      void this.deps
+        .getUpdateStatus()
+        .then((status) => {
+          if (!disposed && status) {
+            this.updateStatus = status;
+          }
+        })
+        .catch(() => {});
+    }
 
     void this.fetchSnapshot();
 
