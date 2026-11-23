@@ -25,6 +25,7 @@ export default defineConfig({
       input: {
         tray: resolve(__dirname, 'tray.html'),
         dashboard: resolve(__dirname, 'dashboard.html'),
+        settings: resolve(__dirname, 'settings.html'),
       },
     },
   },
