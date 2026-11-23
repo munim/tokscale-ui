@@ -1,12 +1,11 @@
 <script lang="ts">
-  import {
-    ipc,
-    isMockMode,
-    type DashboardQuery,
-    type SourceHealthRow,
-  } from '$lib/contracts/ipc';
-  import { nextThemeMode, theme, type ThemeMode } from '$lib/state/theme.svelte';
-  import { BrandMark } from '$lib/ui';
+import {
+  ipc,
+  isMockMode,
+  type DashboardQuery,
+  type SourceHealthRow,
+} from '$lib/contracts/ipc';
+import { BrandMark } from '$lib/ui';
 
   interface Props {
     search: string;
@@ -16,7 +15,7 @@
     onSearchChange: (value: string) => void;
     onClearSearch: () => void;
     onOpenSources: () => void;
-    onThemeChange: (mode: ThemeMode) => void;
+    onOpenSettings: () => void;
     onRefresh: () => void;
   }
 
@@ -28,7 +27,7 @@
     onSearchChange,
     onClearSearch,
     onOpenSources,
-    onThemeChange,
+    onOpenSettings,
     onRefresh,
   }: Props = $props();
 
@@ -46,20 +45,9 @@
     totalCount > 0 ? `Sources ${activeCount} / ${totalCount}` : 'Sources 0 / 0',
   );
 
-  let themeLabel = $derived.by(() => {
-    if (theme.mode === 'light') return 'Light';
-    if (theme.mode === 'dark') return 'Dark';
-    return 'System';
-  });
-
   export function focusSearch(): void {
     searchEl?.focus();
     searchEl?.select();
-  }
-
-  function handleThemeCycle(): void {
-    const next = nextThemeMode(theme.mode);
-    onThemeChange(next);
   }
 
   function triggerBrowserDownload(filename: string, content: string): void {
@@ -147,25 +135,6 @@
     <button
       type="button"
       class="app-btn"
-      onclick={handleThemeCycle}
-      aria-label={`Theme: ${themeLabel}. Switch theme`}
-      title={`Theme: ${themeLabel}`}
-    >
-      <span class="app-theme-badge" aria-hidden="true">
-        {#if theme.mode === 'light'}
-          ☀
-        {:else if theme.mode === 'dark'}
-          ☾
-        {:else}
-          ◐
-        {/if}
-      </span>
-      <span>{themeLabel}</span>
-    </button>
-
-    <button
-      type="button"
-      class="app-btn"
       disabled={exporting}
       onclick={() => void handleExportJson()}
     >
@@ -206,6 +175,31 @@
       </svg>
       <span>Refresh</span>
       <kbd class="app-kbd" aria-hidden="true">r</kbd>
+    </button>
+
+    <button
+      type="button"
+      class="app-btn"
+      onclick={onOpenSettings}
+      aria-label="Settings"
+      title={isMac ? 'Settings (⌘,)' : 'Settings (Ctrl+,)'}
+    >
+      <svg
+        viewBox="0 0 16 16"
+        width="14"
+        height="14"
+        fill="none"
+        aria-hidden="true"
+      >
+        <circle cx="8" cy="8" r="2.25" stroke="currentColor" stroke-width="1.4" />
+        <path
+          d="M8 1.75v1.4M8 12.85v1.4M2.59 4.88l1.21.7M12.2 10.42l1.21.7M2.59 11.12l1.21-.7M12.2 5.58l1.21-.7"
+          stroke="currentColor"
+          stroke-width="1.4"
+          stroke-linecap="round"
+        />
+      </svg>
+      <span>Settings</span>
     </button>
   </div>
 </header>

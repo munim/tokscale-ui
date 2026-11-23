@@ -131,4 +131,18 @@ describe('shortcuts', () => {
     expect(handlers.onPrevTab).not.toHaveBeenCalled();
     expect(handlers.onNextTab).not.toHaveBeenCalled();
   });
+
+  it('triggers onOpenSettings on Cmd+, or Ctrl+,', () => {
+    const onOpenSettings = vi.fn();
+    const handlers: ShortcutHandlers = { ...makeHandlers(), onOpenSettings };
+    const onKeydown = createShortcutHandler(handlers);
+
+    const macEvent = dispatchKey(onKeydown, ',', document.body, { metaKey: true });
+    expect(macEvent.defaultPrevented).toBe(true);
+    expect(onOpenSettings).toHaveBeenCalledTimes(1);
+
+    const winEvent = dispatchKey(onKeydown, ',', document.body, { ctrlKey: true });
+    expect(winEvent.defaultPrevented).toBe(true);
+    expect(onOpenSettings).toHaveBeenCalledTimes(2);
+  });
 });

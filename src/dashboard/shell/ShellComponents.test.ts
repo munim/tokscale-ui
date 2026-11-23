@@ -398,7 +398,7 @@ describe('AppBar, KpiStrip, StatusBar, and DashboardApp', () => {
     const snapshot = mockDashboardSnapshot(query);
     const onClearSearch = vi.fn();
     const onOpenSources = vi.fn();
-    const onThemeChange = vi.fn();
+    const onOpenSettings = vi.fn();
     const onRefresh = vi.fn();
 
     render(AppBar, {
@@ -410,7 +410,7 @@ describe('AppBar, KpiStrip, StatusBar, and DashboardApp', () => {
         onSearchChange: vi.fn(),
         onClearSearch,
         onOpenSources,
-        onThemeChange,
+        onOpenSettings,
         onRefresh,
       },
     });
@@ -423,9 +423,9 @@ describe('AppBar, KpiStrip, StatusBar, and DashboardApp', () => {
     await fireEvent.click(sourcesBtn);
     expect(onOpenSources).toHaveBeenCalledTimes(1);
 
-    const themeBtn = screen.getByRole('button', { name: /Theme:/i });
-    await fireEvent.click(themeBtn);
-    expect(onThemeChange).toHaveBeenCalled();
+    const settingsBtn = screen.getByRole('button', { name: 'Settings' });
+    await fireEvent.click(settingsBtn);
+    expect(onOpenSettings).toHaveBeenCalledTimes(1);
 
     render(KpiStrip, { props: { kpis: snapshot.kpis } });
     expect(screen.getByText('Total cost')).toBeInTheDocument();

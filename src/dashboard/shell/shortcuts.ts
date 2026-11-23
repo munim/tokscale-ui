@@ -5,6 +5,7 @@ export interface ShortcutHandlers {
   onRefresh: () => void;
   onFocusSearch: () => void;
   onClearSearch: () => void;
+  onOpenSettings?: () => void;
 }
 
 function isEditableTarget(target: EventTarget | null): boolean {
@@ -37,6 +38,14 @@ function isArrowManagedWidget(target: EventTarget | null): boolean {
 export function createShortcutHandler(handlers: ShortcutHandlers): (event: KeyboardEvent) => void {
   return (event: KeyboardEvent) => {
     if (isModalOpen()) {
+      return;
+    }
+
+    if ((event.metaKey || event.ctrlKey) && !event.altKey && event.key === ',') {
+      if (handlers.onOpenSettings) {
+        event.preventDefault();
+        handlers.onOpenSettings();
+      }
       return;
     }
 

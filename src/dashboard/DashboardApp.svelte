@@ -2,7 +2,7 @@
   import '../styles/tokens.css';
   import '../lib/ui/ui.css';
   import './dashboard.css';
-  import type { DashboardNavigateEvent } from '$lib/contracts/ipc';
+  import { ipc, type DashboardNavigateEvent } from '$lib/contracts/ipc';
   import AppBar from './shell/AppBar.svelte';
   import KpiStrip from './shell/KpiStrip.svelte';
   import { createDashboardRouter } from './shell/router.svelte';
@@ -33,6 +33,7 @@
       onRefresh: () => void router.refresh(),
       onFocusSearch: () => appBarRef?.focusSearch(),
       onClearSearch: () => router.clearSearch(),
+      onOpenSettings: () => void ipc.openSettings(),
     });
     return () => {
       stopShortcuts();
@@ -55,7 +56,7 @@
     onSearchChange={(value) => router.setSearch(value)}
     onClearSearch={() => router.clearSearch()}
     onOpenSources={() => router.setTab('agents')}
-    onThemeChange={(mode) => void router.setThemeMode(mode)}
+    onOpenSettings={() => void ipc.openSettings()}
     onRefresh={() => void router.refresh()}
   />
 
