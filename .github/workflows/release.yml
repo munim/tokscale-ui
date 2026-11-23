@@ -182,31 +182,30 @@ jobs:
           fi
           git clone "https://x-access-token:${TAP_TOKEN}@github.com/${TAP_REPO}.git" tap-repo
           mkdir -p tap-repo/Casks
-          cat > tap-repo/Casks/tokscale-ui.rb <<EOF
-cask "tokscale-ui" do
-  arch arm: "${ARM_FILE}", intel: "${INTEL_FILE}"
-
-  version "${VERSION}"
-  sha256 arm:   "${ARM_SHA}",
-         intel: "${INTEL_SHA}"
-
-  url "https://github.com/${GITHUB_REPOSITORY}/releases/download/v#{version}/#{arch}"
-  name "Tokscale UI"
-  desc "Desktop and menubar companion for tokscale"
-  homepage "https://github.com/${GITHUB_REPOSITORY}"
-
-  auto_updates true
-  depends_on macos: ">= :big_sur"
-
-  app "Tokscale UI.app"
-
-  postflight_steps do
-    run "/usr/bin/xattr",
-        args:           ["-dr", "com.apple.quarantine", "{{appdir}}/Tokscale UI.app"],
-        writable_paths: ["{{appdir}}/Tokscale UI.app"]
-  end
-end
-EOF
+          printf '%s\n' \
+            "cask \"tokscale-ui\" do" \
+            "  arch arm: \"${ARM_FILE}\", intel: \"${INTEL_FILE}\"" \
+            "" \
+            "  version \"${VERSION}\"" \
+            "  sha256 arm:   \"${ARM_SHA}\"," \
+            "         intel: \"${INTEL_SHA}\"" \
+            "" \
+            "  url \"https://github.com/${GITHUB_REPOSITORY}/releases/download/v#{version}/#{arch}\"" \
+            "  name \"Tokscale UI\"" \
+            "  desc \"Desktop and menubar companion for tokscale\"" \
+            "  homepage \"https://github.com/${GITHUB_REPOSITORY}\"" \
+            "" \
+            "  auto_updates true" \
+            "  depends_on macos: \">= :big_sur\"" \
+            "" \
+            "  app \"Tokscale UI.app\"" \
+            "" \
+            "  postflight_steps do" \
+            "    run \"/usr/bin/xattr\"," \
+            "        args:           [\"-dr\", \"com.apple.quarantine\", \"{{appdir}}/Tokscale UI.app\"]," \
+            "        writable_paths: [\"{{appdir}}/Tokscale UI.app\"]" \
+            "  end" \
+            "end" > tap-repo/Casks/tokscale-ui.rb
           cd tap-repo
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
