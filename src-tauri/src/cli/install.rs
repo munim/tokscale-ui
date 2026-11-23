@@ -57,12 +57,15 @@ pub(crate) async fn install_or_upgrade(service: &CliService) -> CliInstallResult
 
 #[cfg(test)]
 mod tests {
+    #[cfg(unix)]
     use std::fs;
     use std::sync::{Arc, RwLock};
     use tempfile::TempDir;
 
     use super::*;
-    use crate::cli::locate::{write_test_script, ProbeEnv};
+    #[cfg(unix)]
+    use crate::cli::locate::write_test_script;
+    use crate::cli::locate::ProbeEnv;
     use crate::contracts::CompanionPreferences;
 
     #[tokio::test]

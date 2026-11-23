@@ -6,9 +6,12 @@ use tempfile::TempDir;
 use tokscale_ui_lib::cli::{CliService, ProbeEnv};
 use tokscale_ui_lib::commands::{AppState, CliServiceRunner};
 use tokscale_ui_lib::contracts::{CompanionPreferences, DashboardQuery, RangePreset};
+#[cfg(unix)]
 use tokscale_ui_lib::data::cache::CacheOutcome;
 use tokscale_ui_lib::data::schema::EXPECTED_SCHEMA_VERSION;
-use tokscale_ui_lib::data::source::{CliRunner, DataOrigin};
+use tokscale_ui_lib::data::source::CliRunner;
+#[cfg(unix)]
+use tokscale_ui_lib::data::source::DataOrigin;
 use tokscale_ui_lib::data::DataService;
 use tokscale_ui_lib::shell::ShellState;
 

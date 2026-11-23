@@ -318,13 +318,19 @@ fn configure_child_env(cmd: &mut Command, program: &Path, env: &ProbeEnv) {
 
 #[cfg(test)]
 mod tests {
+    #[cfg(unix)]
     use std::fs;
+    #[cfg(unix)]
     use std::sync::{Arc, RwLock};
+    #[cfg(unix)]
     use tempfile::TempDir;
 
     use super::*;
+    #[cfg(unix)]
     use crate::cli::locate::write_test_script;
+    #[cfg(unix)]
     use crate::cli::CliService;
+    #[cfg(unix)]
     use crate::contracts::CompanionPreferences;
 
     #[cfg(unix)]

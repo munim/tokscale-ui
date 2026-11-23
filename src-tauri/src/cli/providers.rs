@@ -125,11 +125,14 @@ fn warning_message_from_error(err: &CliError) -> String {
 #[cfg(test)]
 mod tests {
     use std::fs;
+    #[cfg(unix)]
     use std::sync::{Arc, RwLock};
     use tempfile::TempDir;
 
     use super::*;
+    #[cfg(unix)]
     use crate::cli::locate::write_test_script;
+    #[cfg(unix)]
     use crate::contracts::CompanionPreferences;
 
     #[test]

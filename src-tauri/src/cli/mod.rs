@@ -205,7 +205,7 @@ fn parse_version_output(raw: &str) -> Option<String> {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, unix))]
 mod tests {
     use std::fs;
     use tempfile::TempDir;

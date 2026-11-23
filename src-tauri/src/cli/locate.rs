@@ -74,14 +74,11 @@ impl ProbeEnv {
         self
     }
 
-    #[cfg(test)]
+    #[cfg(all(test, unix))]
     pub(crate) fn with_test_path(self, dirs: impl IntoIterator<Item = PathBuf>) -> Self {
         let mut all: Vec<PathBuf> = dirs.into_iter().collect();
-        #[cfg(unix)]
-        {
-            all.push(PathBuf::from("/usr/bin"));
-            all.push(PathBuf::from("/bin"));
-        }
+        all.push(PathBuf::from("/usr/bin"));
+        all.push(PathBuf::from("/bin"));
         self.with_path(all)
     }
 
